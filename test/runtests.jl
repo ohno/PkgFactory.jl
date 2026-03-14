@@ -23,3 +23,8 @@ end
     @test "OK" != PkgFactory.verify_package_name("VMC.jl")
     @test "OK" != PkgFactory.verify_package_name("Eigen京")
 end
+
+@testset "JLL executable paths" begin
+    @test !isempty(PkgFactory.git_executable())
+    @test !isempty(PkgFactory.gh_executable())
+end
