@@ -24,6 +24,90 @@ function hello()
     return "Hello, World!2"
 end
 
+
+function _run_command(cmd::Cmd; env::Dict{String,String}=Dict{String,String}())
+    out = IOBuffer()
+    err = IOBuffer()
+    process = run(pipeline(ignorestatus(setenv(cmd, env)), stdout=out, stderr=err))
+    stdout = String(take!(out))
+    stderr = String(take!(err))
+    return success(process), stdout, stderr
+end
+
+function _run_command_or_throw(cmd::Cmd; env::Dict{String,String}=Dict{String,String}())
+    ok, stdout, stderr = _run_command(cmd; env=env)
+    ok || error("Command failed: $(cmd)\nSTDOUT:\n$(stdout)\nSTDERR:\n$(stderr)")
+    return stdout
+end
+
+"""
+$(DocStringExtensions.TYPEDSIGNATURES)
+"""
+function git_executable()
+    if Base.find_package("Git_jll") !== nothing
+        @eval import Git_jll
+        return Git_jll.git()
+    end
+    return "git"
+end
+
+"""
+$(DocStringExtensions.TYPEDSIGNATURES)
+"""
+function gh_executable()
+    if Base.find_package("GitHub_jll") !== nothing
+        @eval import GitHub_jll
+        return GitHub_jll.gh()
+    end
+    return "gh"
+end
+
+"""
+$(DocStringExtensions.TYPEDSIGNATURES)
+"""
+function create_package_with_jll(
+    access_token::String,
+    owner_name::String,
+    repo_name::String,
+    author_names::Vector{String},
+    package_description::String;
+    commit_message::String = "Using PkgFactory.jl",
+)
+    gh_env = Dict("GH_TOKEN" => access_token)
+
+    _run_command_or_throw(`$(gh_executable()) repo create $(owner_name)/$(repo_name) --public --description $(package_description) --homepage https://$(owner_name).github.io/$(repo_name) --confirm`; env=gh_env)
+
+    pubkey, privkey = GitHub.genkeys()
+    _run_command_or_throw(`$(gh_executable()) api repos/$(owner_name)/$(repo_name)/keys --method POST -f title=Documenter -f key=$(pubkey) -F read_only=false`; env=gh_env)
+    _run_command_or_throw(`$(gh_executable()) secret set DEPLOY_KEY --repo $(owner_name)/$(repo_name) --body $(privkey)`; env=gh_env)
+
+    main_ref = strip(_run_command_or_throw(`$(gh_executable()) api repos/$(owner_name)/$(repo_name)/git/ref/heads/main --jq .object.sha`; env=gh_env))
+    _run_command_or_throw(`$(gh_executable()) api repos/$(owner_name)/$(repo_name)/git/refs --method POST -f ref=refs/heads/gh-pages -f sha=$(main_ref)`; env=gh_env)
+
+    paths_and_contents = generate_template_dict(owner_name, repo_name, author_names, package_description)
+    tempdir = mktempdir()
+
+    _run_command_or_throw(`$(git_executable()) -C $(tempdir) init`)
+    _run_command_or_throw(`$(git_executable()) -C $(tempdir) checkout -b main`)
+    _run_command_or_throw(`$(git_executable()) -C $(tempdir) config user.name $(first(author_names))`)
+    _run_command_or_throw(`$(git_executable()) -C $(tempdir) config user.email pkgfactory@example.com`)
+
+    for (path, content) in paths_and_contents
+        file_path = joinpath(tempdir, path)
+        mkpath(dirname(file_path))
+        write(file_path, content)
+    end
+
+    _run_command_or_throw(`$(git_executable()) -C $(tempdir) add .`)
+    _run_command_or_throw(`$(git_executable()) -C $(tempdir) commit -m $(commit_message)`)
+
+    _run_command_or_throw(`$(gh_executable()) auth setup-git`; env=gh_env)
+    _run_command_or_throw(`$(git_executable()) -C $(tempdir) remote add origin https://github.com/$(owner_name)/$(repo_name).git`)
+    _run_command_or_throw(`$(git_executable()) -C $(tempdir) push -u origin main`)
+
+    return true
+end
+
 # Authorization
 
 """
