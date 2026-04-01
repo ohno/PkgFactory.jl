@@ -1,7 +1,7 @@
 name = "PkgFactory"
 uuid = "f5938637-db80-4a7e-b041-f9483a1b56a7"
 authors = ["Shuhei Ohno"]
-version = "0.0.4"
+version = "0.0.5"
 
 [deps]
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
