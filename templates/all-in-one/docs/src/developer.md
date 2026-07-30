@@ -52,6 +52,8 @@ This is the typical workflow for making changes.
 
 ## Versioning and Registering (for Maintainers)
 
+https://github.com/SciML/ColPrac?tab=readme-ov-file#incrementing-the-package-version
+
 This project follows [Semantic Versioning](https://semver.org/). When bumping the version, update the version number in:
 
 - [Project.toml](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/blob/main/Project.toml#L4)
