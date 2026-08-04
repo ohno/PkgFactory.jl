@@ -53,32 +53,40 @@ function create_package_with_jll(
 )
     gh_env = Dict("GH_TOKEN" => access_token)
 
+    # create repository
     _run_command_or_throw(`$(gh_cli_jll.gh()) repo create $(owner_name)/$(repo_name) --public --description $(package_description) --homepage https://$(owner_name).github.io/$(repo_name) --confirm`; env=gh_env)
 
+    # set up deploy key and secret
     pubkey, privkey = GitHub.genkeys()
     _run_command_or_throw(`$(gh_cli_jll.gh()) api repos/$(owner_name)/$(repo_name)/keys --method POST -f title=Documenter -f key=$(pubkey) -F read_only=false`; env=gh_env)
     _run_command_or_throw(`$(gh_cli_jll.gh()) secret set DEPLOY_KEY --repo $(owner_name)/$(repo_name) --body $(privkey)`; env=gh_env)
 
+    # create gh-pages branch for documentation
     main_ref = strip(_run_command_or_throw(`$(gh_cli_jll.gh()) api repos/$(owner_name)/$(repo_name)/git/ref/heads/main --jq .object.sha`; env=gh_env))
     _run_command_or_throw(`$(gh_cli_jll.gh()) api repos/$(owner_name)/$(repo_name)/git/refs --method POST -f ref=refs/heads/gh-pages -f sha=$(main_ref)`; env=gh_env)
 
+    # generate template files and commit them
     paths_and_contents = generate_template_dict(owner_name, repo_name, author_names, package_description)
     tempdir = mktempdir()
 
+    # set up git repository in temporary directory
     _run_command_or_throw(`$(Git.git()) -C $(tempdir) init`)
     _run_command_or_throw(`$(Git.git()) -C $(tempdir) checkout -b main`)
     _run_command_or_throw(`$(Git.git()) -C $(tempdir) config user.name $(first(author_names))`)
     _run_command_or_throw(`$(Git.git()) -C $(tempdir) config user.email pkgfactory@example.com`)
 
+    # write template files to temporary directory
     for (path, content) in paths_and_contents
         file_path = joinpath(tempdir, path)
         mkpath(dirname(file_path))
         write(file_path, content)
     end
 
+    # commit and push changes to GitHub
     _run_command_or_throw(`$(Git.git()) -C $(tempdir) add .`)
     _run_command_or_throw(`$(Git.git()) -C $(tempdir) commit -m $(commit_message)`)
 
+    # push to GitHub using gh CLI with authentication
     _run_command_or_throw(`$(gh_cli_jll.gh()) auth setup-git`; env=gh_env)
     _run_command_or_throw(`$(Git.git()) -C $(tempdir) remote add origin https://github.com/$(owner_name)/$(repo_name).git`)
     _run_command_or_throw(`$(Git.git()) -C $(tempdir) push -u origin main`)

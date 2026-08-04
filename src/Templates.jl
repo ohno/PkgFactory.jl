@@ -138,4 +138,49 @@ function generate_template_files_dict(owner_name::String, repo_name::String, aut
 
 end
 
+"""
+!!! warning
+    This function is only for developers. This function updates the template files in the `PkgFactory.jl/template` directory.
+
+Signature:
+
+$(DocStringExtensions.TYPEDSIGNATURES)
+
+Example:
+
+```julia
+PkgFactory.update_template("OWNER_NAME", "template", ["AUTHOR1", "AUTHOR2"])
+```
+"""
+function update_template(owner_name::String, repo_name::String, author_names::Vector{String})::Dict{String, String}
+    template = PkgTemplates.Template(;
+        dir = "$(@__DIR__)/../",
+        user = owner_name,
+        authors = author_names,
+        julia = v"1.11",
+        plugins = [
+            # https://juliaci.github.io/PkgTemplates.jl/stable/user/#Default-Plugins
+            PkgTemplates.ProjectFile(; version = v"0.0.1"),
+            PkgTemplates.SrcDir(),
+            PkgTemplates.Tests(; project = true),
+            PkgTemplates.Readme(),
+            PkgTemplates.License(),
+            # PkgTemplates.Git(; ignore = ["*/Manifest.toml"]),
+            PkgTemplates.GitHubActions(; extra_versions = ["1.11"]),
+            PkgTemplates.CompatHelper(),
+            PkgTemplates.TagBot(),
+            # PkgTemplates.Secret(),
+            PkgTemplates.Dependabot(),
+            # https://juliaci.github.io/PkgTemplates.jl/stable/user/#Code-Coverage
+            PkgTemplates.Codecov(),
+            # https://juliaci.github.io/PkgTemplates.jl/stable/user/#Documentation
+            PkgTemplates.Documenter{PkgTemplates.GitHubActions}(),
+            # https://juliaci.github.io/PkgTemplates.jl/stable/user/#Miscellaneous
+            PkgTemplates.Citation(; readme = true),
+            # PkgTemplates.Formatter(),
+        ],
+    )
+    return template(repo_name)
+end
+
 end
