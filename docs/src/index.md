@@ -24,10 +24,11 @@ import PkgFactory
 PkgFactory.CLI()
 ```
 
-```julia
-import PkgFactory
-PkgFactory.GUI()
-```
+The user interface will be imp
+
+## Acknowledgments
+
+[AGENTS.md](https://github.com/ohno/PkgFactory.jl/blob/main/AGENTS.md) was created with Claude Fable 5 (Claude Code, Pro plan) on July 7, 2026.
 
 ## API Reference
 
