@@ -29,6 +29,8 @@ Development REPL (with Revise):
 julia -i -E 'using Revise; import Pkg; Pkg.activate("."); using PkgFactory; PkgFactory.hello()'
 ```
 
+Local API tests replace the command runner and SSH key generator with test doubles. The default test suite must not create repositories, change GitHub authentication, or write repository secrets. End-to-end checks should use a dedicated account and repository and must not run in the default CI workflow.
+
 OAuth Device Flow Sequence Diagram:
 
 ```mermaid

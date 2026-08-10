@@ -8,6 +8,11 @@ CurrentModule = PkgFactory
 ```
 
 ```@autodocs
-Modules = [PkgFactory]
+Modules = [
+    PkgFactory,
+    PkgFactory.LocalAPI,
+    PkgFactory.LocalUI,
+    PkgFactory.Templates,
+    PkgFactory.Verifications,
+]
 ```
-
