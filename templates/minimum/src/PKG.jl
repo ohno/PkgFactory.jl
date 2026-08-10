@@ -1,9 +1,9 @@
 module {{{PKG}}}
 
 """
-docstrings
+Return a friendly greeting.
 """
-function hello()::String
+function hello()
     return "Hello, World!"
 end
 

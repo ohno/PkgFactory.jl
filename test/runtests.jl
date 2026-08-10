@@ -72,6 +72,91 @@ end
     @test occursin("My special package", paths_and_contents["README.md"])
 end
 
+@testset "generated template contracts" begin
+    render(template_name) = PkgFactory.Templates.generate_template_files_dict(
+        "ohno",
+        "MyPkg.jl",
+        ["Shuhei Ohno"],
+        "My special package",
+        template_name,
+    )
+
+    all_in_one = render("all-in-one")
+    minimum = render("minimum")
+
+    @test haskey(all_in_one, "src/MyPkg.jl")
+    @test haskey(minimum, "src/MyPkg.jl")
+    @test occursin("version = \"0.0.1\"", all_in_one["Project.toml"])
+    @test occursin("version = {v0.0.1}", all_in_one["CITATION.bib"])
+    project_uuid = only(match(r"uuid = \"([^\"]+)\"", all_in_one["Project.toml"]).captures)
+    @test occursin("MyPkg = \"$(project_uuid)\"", all_in_one["docs/Project.toml"])
+
+    @test !occursin("[extras]", all_in_one["Project.toml"])
+    @test !occursin("[targets]", all_in_one["Project.toml"])
+    @test !occursin("Aqua =", all_in_one["Project.toml"])
+    @test !occursin("JET =", all_in_one["Project.toml"])
+    @test !occursin("Test =", all_in_one["Project.toml"])
+    @test occursin("julia = \"1.10\"", all_in_one["Project.toml"])
+    @test occursin("Aqua =", all_in_one["test/Project.toml"])
+    @test occursin("JET = \"0.9, 0.10, 0.11, 0.12\"", all_in_one["test/Project.toml"])
+    @test occursin("Test =", all_in_one["test/Project.toml"])
+    @test occursin("Documenter = \"1\"", all_in_one["docs/Project.toml"])
+
+    @test !haskey(all_in_one, ".github/workflows/CompatHelper.yml")
+    dependabot = all_in_one[".github/dependabot.yml"]
+    @test occursin("package-ecosystem: \"github-actions\"", dependabot)
+    @test occursin("package-ecosystem: \"julia\"", dependabot)
+    for directory in ("/", "/docs", "/test")
+        @test occursin("- \"$(directory)\"", dependabot)
+    end
+
+    all_ci = all_in_one[".github/workflows/CI.yml"]
+    @test occursin(raw"${{ matrix.version }}", all_ci)
+    @test occursin("version: 'min'", all_ci)
+    @test count(==(true), occursin.("coverage: true", eachline(IOBuffer(all_ci)))) == 1
+    @test count(==(true), occursin.("jet: 'true'", eachline(IOBuffer(all_ci)))) == 1
+    @test occursin("version: 'pre'", all_ci)
+    @test occursin("continue-on-error:", all_ci)
+    @test occursin("JET_TEST:", all_ci)
+    @test occursin("@static if get(ENV, \"JET_TEST\", \"true\") == \"true\"", all_in_one["test/runtests.jl"])
+
+    @test occursin("```jldoctest", all_in_one["src/MyPkg.jl"])
+    @test occursin("MyPkg.hello()", all_in_one["src/MyPkg.jl"])
+    @test occursin("Return a friendly greeting.", all_in_one["src/MyPkg.jl"])
+    @test !occursin("hello()::String", all_in_one["src/MyPkg.jl"])
+    @test !occursin("#L", all_in_one["docs/src/developer.md"])
+    @test occursin("[ColPrac version increment guidelines]", all_in_one["docs/src/developer.md"])
+    @test !occursin("```@index", all_in_one["docs/src/index.md"])
+    @test occursin("import MyPkg # hide", all_in_one["docs/src/index.md"])
+    @test occursin("pkgdir(MyPkg)", all_in_one["docs/src/index.md"])
+    @test !occursin("../../CITATION.bib", all_in_one["docs/src/index.md"])
+    @test occursin(r"month\s+= \{[a-z]{3}\}", all_in_one["CITATION.bib"])
+    @test occursin("# Paste the complete output here.", all_in_one[".github/ISSUE_TEMPLATE/bug_report.md"])
+    @test !occursin("8fce2d05", all_in_one[".github/ISSUE_TEMPLATE/bug_report.md"])
+    @test !occursin("Julia Version 1.10.10", all_in_one[".github/ISSUE_TEMPLATE/bug_report.md"])
+
+    @test haskey(minimum, ".github/workflows/CI.yml")
+    @test occursin("actions/workflows/CI.yml/badge.svg", minimum["README.md"])
+    @test occursin("Pkg.add(url=", minimum["README.md"])
+    @test occursin("MyPkg.hello()", minimum["README.md"])
+    @test occursin(raw"${{ matrix.version }}", minimum[".github/workflows/CI.yml"])
+    @test occursin("version: 'min'", minimum[".github/workflows/CI.yml"])
+    @test occursin("version: 'pre'", minimum[".github/workflows/CI.yml"])
+    @test !occursin("[extras]", minimum["Project.toml"])
+    @test !occursin("[targets]", minimum["Project.toml"])
+    @test occursin("julia = \"1.10\"", minimum["Project.toml"])
+    @test occursin("Test =", minimum["test/Project.toml"])
+    @test !any(startswith(path, "docs/") for path in keys(minimum))
+    @test !haskey(minimum, "CITATION.bib")
+    @test !occursin("CITATION", minimum["README.md"])
+    @test !occursin("Documentation", minimum["README.md"])
+    @test !any(
+        occursin(dependency, content) for
+            dependency in ("Documenter", "Codecov", "JET") for
+            content in values(minimum)
+    )
+end
+
 # @testset "PkgFactory.check_status_code" begin
 #     @test PkgFactory.check_status_code()
 # end

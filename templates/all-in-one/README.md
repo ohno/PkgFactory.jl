@@ -13,6 +13,21 @@
 
 {{{DESCR}}}
 
+## Installation
+
+Run the following command in the Julia REPL or a notebook:
+
+```julia
+import Pkg; Pkg.add(url="https://github.com/{{{OWNER}}}/{{{PKG}}}.jl.git")
+```
+
+After installation, load the package and verify it works:
+
+```julia
+julia> import {{{PKG}}}; {{{PKG}}}.hello()
+"Hello, World!"
+```
+
 ## Documentation
 
 - Home: https://{{{OWNER}}}.github.io/{{{PKG}}}.jl

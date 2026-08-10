@@ -52,11 +52,11 @@ This is the typical workflow for making changes.
 
 ## Versioning and Registering (for Maintainers)
 
-https://github.com/SciML/ColPrac?tab=readme-ov-file#incrementing-the-package-version
+This project follows [Semantic Versioning](https://semver.org/) and the [ColPrac version increment guidelines](https://github.com/SciML/ColPrac?tab=readme-ov-file#incrementing-the-package-version). When bumping the version, update:
 
-This project follows [Semantic Versioning](https://semver.org/). When bumping the version, update the version number in:
+- the version in [Project.toml](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/blob/main/Project.toml)
+- the version, year, and month in [CITATION.bib](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/blob/main/CITATION.bib)
 
-- [Project.toml](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/blob/main/Project.toml#L4)
-- [CITATION.bib](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/blob/main/CITATION.bib#5)
+Keep the version values synchronized, and set the citation date to the release date.
 
 To register this package in the [General](https://github.com/JuliaRegistries/General) registry, install [Registrator](https://github.com/JuliaRegistries/Registrator.jl?tab=readme-ov-file#install-registrator) and use it via the [GitHub App](https://github.com/JuliaRegistries/Registrator.jl?tab=readme-ov-file#via-the-github-app).
