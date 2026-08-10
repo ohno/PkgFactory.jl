@@ -52,7 +52,7 @@ text = PkgFactory.Templates.read_file(path_file)
 """
 function read_file(path::String)::String
     try
-        Base.read(path, String)
+        text = Base.read(path, String)
         @info "Success to read file: $(path)"
         
         return text
@@ -109,7 +109,7 @@ function generate_template_files_dict(owner_name::String, repo_name::String, aut
         "URL"      => "https://github.com/$(owner_name)/$(repo_name)",
         "VERSION"  => "v0.0.1",
         "YEAR"     => Dates.year(Dates.today()),
-        "MONTH"    => Dates.month(Dates.today()),
+        "MONTH"    => lowercase(Dates.monthabbr(Dates.today())),
     )
 
     paths_and_contents = Dict{String, String}()
@@ -157,7 +157,7 @@ function update_template(owner_name::String, repo_name::String, author_names::Ve
         dir = "$(@__DIR__)/../",
         user = owner_name,
         authors = author_names,
-        julia = v"1.11",
+        julia = v"1.10",
         plugins = [
             # https://juliaci.github.io/PkgTemplates.jl/stable/user/#Default-Plugins
             PkgTemplates.ProjectFile(; version = v"0.0.1"),
@@ -166,8 +166,7 @@ function update_template(owner_name::String, repo_name::String, author_names::Ve
             PkgTemplates.Readme(),
             PkgTemplates.License(),
             # PkgTemplates.Git(; ignore = ["*/Manifest.toml"]),
-            PkgTemplates.GitHubActions(; extra_versions = ["1.11"]),
-            PkgTemplates.CompatHelper(),
+            PkgTemplates.GitHubActions(; extra_versions = ["1.10"]),
             PkgTemplates.TagBot(),
             # PkgTemplates.Secret(),
             PkgTemplates.Dependabot(),

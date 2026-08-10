@@ -41,15 +41,15 @@ For contribution and maintenance workflows, see the [Developer Guide](developer.
 
 ## API Reference
 
-```@index
-```
+For the generated API index and docstrings, see the [API Reference](api.md).
 
 ## Citation
 
 Use [CITATION.bib](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/blob/main/CITATION.bib) to cite this package.
 
 ```@example
-println(Base.read("../../CITATION.bib", String)) # hide
+import {{{PKG}}} # hide
+println(read(joinpath(pkgdir({{{PKG}}}), "CITATION.bib"), String)) # hide
 ```
 
 ## Acknowledgments

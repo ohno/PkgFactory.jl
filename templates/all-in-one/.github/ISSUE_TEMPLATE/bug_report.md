@@ -30,21 +30,10 @@ Stacktrace:
 
 ```julia
 julia> versioninfo()
-Julia Version 1.10.10
-Commit 95f30e51f4 (2025-06-27 09:51 UTC)
-Build Info:
-  Official https://julialang.org/ release
-Platform Info:
-  OS: Windows (x86_64-w64-mingw32)
-  CPU: 8 × 11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz
-  WORD_SIZE: 64
-  LIBM: libopenlibm
-  LLVM: libLLVM-15.0.7 (ORCJIT, tigerlake)
-Threads: 1 default, 0 interactive, 1 GC (on 8 virtual cores)
+# Paste the complete output here.
 
-julia>  import Pkg; Pkg.status("{{{PKG}}}")
-Status `C:\Users\user\.julia\environments\v1.10\Project.toml`
-  [8fce2d05] {{{PKG}}} v0.0.1 `https://github.com/{{{OWNER}}}/{{{PKG}}}.jl.git#main`
+julia> import Pkg; Pkg.status("{{{PKG}}}")
+# Paste the complete output here.
 
 ```
 

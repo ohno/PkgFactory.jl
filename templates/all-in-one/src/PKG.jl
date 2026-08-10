@@ -4,15 +4,19 @@ module {{{PKG}}}
 
 import DocStringExtensions
 
-# Public API
-# Types & Structures
-# Constants
-# Functions
-
 """
 $(DocStringExtensions.TYPEDSIGNATURES)
+
+Return a friendly greeting.
+
+# Examples
+
+```jldoctest
+julia> {{{PKG}}}.hello()
+"Hello, World!"
+```
 """
-function hello()::String
+function hello()
     return "Hello, World!"
 end
 

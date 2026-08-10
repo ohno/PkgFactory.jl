@@ -14,8 +14,9 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
     timeout-minutes: 60
     permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
       actions: write
@@ -23,23 +24,46 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version:
-          - '1.11'
-        os:
-          - ubuntu-latest
-        arch:
-          - x64
+        include:
+          - version: 'min'
+            os: ubuntu-latest
+            experimental: false
+            jet: 'false'
+            coverage: false
+          - version: '1'
+            os: ubuntu-latest
+            experimental: false
+            jet: 'true'
+            coverage: true
+          - version: 'pre'
+            os: ubuntu-latest
+            experimental: true
+            jet: 'false'
+            coverage: false
+          - version: '1'
+            os: macOS-latest
+            experimental: false
+            jet: 'false'
+            coverage: false
+          - version: '1'
+            os: windows-latest
+            experimental: false
+            jet: 'false'
+            coverage: false
+    env:
+      JET_TEST: ${{ matrix.jet }}
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.coverage
       - uses: codecov/codecov-action@v5
+        if: matrix.coverage
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
