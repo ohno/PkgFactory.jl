@@ -118,7 +118,8 @@ function generate_template_files_dict(
     repo_name::String,
     author_names::Vector{String},
     package_description::String,
-    template_name::String,
+    template_name::String;
+    package_uuid::Union{Nothing,String} = nothing,
 )::Dict{String,String}
 
     package_name = replace(repo_name, r"\.jl$" => "")
@@ -127,7 +128,7 @@ function generate_template_files_dict(
         "REPO" => repo_name,
         "OWNER" => owner_name,
         "DESCR" => package_description,
-        "UUID" => string(UUIDs.uuid4()),
+        "UUID" => isnothing(package_uuid) ? string(UUIDs.uuid4()) : package_uuid,
         "AUTHORS" => author_names,
         "LICENSOR" => join(author_names, ", "),
         "URL" => "https://github.com/$(owner_name)/$(repo_name)",
