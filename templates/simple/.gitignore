@@ -1,0 +1,7 @@
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+**/Manifest*.toml
+LocalPreferences.toml
+.DS_Store
+/docs/build/

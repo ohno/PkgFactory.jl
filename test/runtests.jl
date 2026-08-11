@@ -131,6 +131,7 @@ end
     @test template_names == sort(template_names)
     @test "all-in-one" in template_names
     @test "minimum" in template_names
+    @test "simple" in template_names
 end
 
 @testset "list_files" begin
@@ -184,9 +185,15 @@ end
 
     all_in_one = render("all-in-one")
     minimum = render("minimum")
+    simple = render("simple")
 
     @test haskey(all_in_one, "src/MyPkg.jl")
     @test haskey(minimum, "src/MyPkg.jl")
+    @test haskey(simple, "src/MyPkg.jl")
+    for template in (all_in_one, simple, minimum)
+        @test occursin("## Quick Start", template["README.md"])
+        @test !occursin("## Installation", template["README.md"])
+    end
     @test occursin("version = \"0.0.1\"", all_in_one["Project.toml"])
     @test occursin("version = {v0.0.1}", all_in_one["CITATION.bib"])
     project_uuid = only(match(r"uuid = \"([^\"]+)\"", all_in_one["Project.toml"]).captures)
@@ -236,8 +243,53 @@ end
     @test !occursin("8fce2d05", all_in_one[".github/ISSUE_TEMPLATE/bug_report.md"])
     @test !occursin("Julia Version 1.10.10", all_in_one[".github/ISSUE_TEMPLATE/bug_report.md"])
 
+    @test occursin("Documenter = \"1\"", simple["docs/Project.toml"])
+    simple_project_uuid = only(match(r"uuid = \"([^\"]+)\"", simple["Project.toml"]).captures)
+    @test occursin("MyPkg = \"$(simple_project_uuid)\"", simple["docs/Project.toml"])
+    @test haskey(simple, "docs/make.jl")
+    @test haskey(simple, "docs/src/index.md")
+    @test haskey(simple, "docs/src/api.md")
+    @test occursin("\"Home\" => \"index.md\"", simple["docs/make.jl"])
+    @test occursin("\"API Reference\" => \"api.md\"", simple["docs/make.jl"])
+    @test occursin("Documenter", simple["docs/make.jl"])
+    @test occursin("```jldoctest", simple["src/MyPkg.jl"])
+    @test occursin("Test =", simple["test/Project.toml"])
+    @test !occursin("DocStringExtensions", simple["Project.toml"])
+    @test occursin("actions/workflows/CI.yml/badge.svg", simple["README.md"])
+    @test occursin("docs-stable-blue.svg", simple["README.md"])
+    @test occursin("API Reference", simple["README.md"])
+
+    simple_ci = simple[".github/workflows/CI.yml"]
+    @test occursin(raw"${{ matrix.version }}", simple_ci)
+    @test occursin("version: 'min'", simple_ci)
+    @test occursin("version: 'pre'", simple_ci)
+    @test occursin("julia-actions/julia-runtest", simple_ci)
+    @test occursin("julia-actions/julia-docdeploy", simple_ci)
+    @test !occursin("JET_TEST", simple_ci)
+    @test !occursin("julia-processcoverage", simple_ci)
+    @test !occursin("codecov", lowercase(simple_ci))
+
+    for path in (
+        ".github/dependabot.yml",
+        ".github/ISSUE_TEMPLATE/bug_report.md",
+        ".github/ISSUE_TEMPLATE/feature_request.md",
+        ".github/workflows/Format.yml",
+        ".github/workflows/TagBot.yml",
+        "CITATION.bib",
+        "docs/src/developer.md",
+        "docs/src/user.md",
+    )
+        @test !haskey(simple, path)
+    end
+    @test !any(
+        occursin(dependency, content) for
+            dependency in ("Aqua", "JET", "Runic", "Codecov") for
+            content in values(simple)
+    )
+
     @test haskey(minimum, ".github/workflows/CI.yml")
     @test occursin("actions/workflows/CI.yml/badge.svg", minimum["README.md"])
+    @test !occursin("github/license", minimum["README.md"])
     @test occursin("Pkg.add(url=", minimum["README.md"])
     @test occursin("MyPkg.hello()", minimum["README.md"])
     @test occursin(raw"${{ matrix.version }}", minimum[".github/workflows/CI.yml"])
@@ -508,7 +560,7 @@ end
                 "MyPkg",
                 "Alice, Bob",
                 "My package description",
-                "2",
+                "3",
                 "2",
                 "",
                 "codecov-secret",
@@ -533,7 +585,7 @@ end
         package_creator = creator,
         repository_checker = (owner, repo) -> false,
         repository_owners_provider = () -> repository_owners,
-        templates_provider = () -> ["all-in-one", "minimum"],
+        templates_provider = () -> ["minimum", "all-in-one", "simple"],
     )
 
     text = String(take!(output))
@@ -543,11 +595,12 @@ end
     @test occursin("qumpoo/MyPkg.jl", text)
     @test occursin("Created: https://github.com/qumpoo/MyPkg.jl", text)
     @test !occursin("Resume its setup?", text)
-    @test occursin("Select repository owner (example: 1, default: 1):", text)
+    @test occursin("Select repository owner (default: 1):", text)
     @test occursin("Package templates available:", text)
     @test occursin("1. all-in-one (default)", text)
-    @test occursin("2. minimum", text)
-    @test occursin("Select template (example: 1, default: 1):", text)
+    @test occursin("2. simple", text)
+    @test occursin("3. minimum", text)
+    @test occursin("Select template (default: 1):", text)
     @test occursin("Package name (example: MyPkg):", text)
     @test occursin(
         "Authors (comma-separated; written to LICENSE) (example: Alice Smith, Bob Jones):",
@@ -557,7 +610,7 @@ end
     @test occursin("Repository visibility:", text)
     @test occursin("1. public (default)", text)
     @test occursin("2. private", text)
-    @test occursin("Select visibility (example: 2, default: 1):", text)
+    @test occursin("Select visibility (default: 1):", text)
     @test occursin("Initial commit message (default: Using PkgFactory.jl):", text)
     @test occursin(
         "Codecov token (optional, example: 01234567-89ab-cdef-0123-456789abcdef):",
@@ -627,7 +680,7 @@ end
 
     text = String(take!(output))
     @test occursin("Repository ohno/MyPkg.jl already exists.", text)
-    @test occursin("Resume its setup? (example: y, default: n) (y/n):", text)
+    @test occursin("Resume its setup? (default: n) (y/n):", text)
     @test occursin("1. all-in-one (default)", text)
     @test occursin("Codecov:     skipped", text)
     @test only(creator.calls).args[5] == ""
@@ -647,7 +700,7 @@ end
     )
     @test isempty(creator.calls)
     text = String(take!(output))
-    @test occursin("Log in to GitHub now? (example: y, default: y) (y/n):", text)
+    @test occursin("Log in to GitHub now? (default: y) (y/n):", text)
     @test occursin("authentication is required", text)
 
     input = IOBuffer("1\nMyPkg\nAlice\nMy package description\n\n\n\n\nn\n")
