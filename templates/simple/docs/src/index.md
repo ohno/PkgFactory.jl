@@ -1,10 +1,17 @@
+```@meta
+CurrentModule = {{{PKG}}}
+```
+
 # {{{PKG}}}.jl
 
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://{{{OWNER}}}.github.io/{{{PKG}}}.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://{{{OWNER}}}.github.io/{{{PKG}}}.jl/dev/)
+[![License](https://img.shields.io/github/license/{{{OWNER}}}/{{{PKG}}}.jl)](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/blob/main/LICENSE)
 [![Build Status](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/{{{OWNER}}}/{{{PKG}}}.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
 {{{DESCR}}}
 
-## Quick Start
+## Installation
 
 Run the following command in the Julia REPL or a notebook:
 
@@ -12,12 +19,15 @@ Run the following command in the Julia REPL or a notebook:
 import Pkg; Pkg.add(url="https://github.com/{{{OWNER}}}/{{{PKG}}}.jl.git")
 ```
 
-After installation, load the package and verify it works:
+After installation, run the following to load the package and verify it works:
 
-```julia
-julia> import {{{PKG}}}; {{{PKG}}}.hello()
-"Hello, World!"
+```@repl
+import {{{PKG}}}; {{{PKG}}}.hello()
 ```
+
+## API Reference
+
+For the generated API index and docstrings, see the [API Reference](api.md).
 
 ## Acknowledgments
 

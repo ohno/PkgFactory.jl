@@ -23,10 +23,13 @@ function _read_line(
     default::Union{Nothing,String} = nothing,
     example::Union{Nothing,String} = nothing,
 )
-    annotations = String[]
-    !isnothing(example) && push!(annotations, "example: $(example)")
-    !isnothing(default) && push!(annotations, "default: $(default)")
-    annotation = isempty(annotations) ? "" : " ($(join(annotations, ", ")))"
+    annotation = if !isnothing(default)
+        " (default: $(default))"
+    elseif !isnothing(example)
+        " (example: $(example))"
+    else
+        ""
+    end
     suffix = "$(annotation): "
     print(output, message, suffix)
     flush(output)
@@ -58,9 +61,12 @@ function _prompt_yes_no(
     default::Union{Nothing,Bool} = nothing,
     example::String = "y",
 )::Bool
-    annotations = ["example: $(example)"]
-    !isnothing(default) && push!(annotations, "default: $(default ? "y" : "n")")
-    suffix = " ($(join(annotations, ", "))) (y/n): "
+    annotation = if isnothing(default)
+        "example: $(example)"
+    else
+        "default: $(default ? "y" : "n")"
+    end
+    suffix = " ($(annotation)) (y/n): "
     while true
         print(output, message, suffix)
         flush(output)
@@ -206,12 +212,14 @@ end
 
 function _prompt_template(input::IO, output::IO, template_names::Vector{String})::String
     isempty(template_names) && error("No package templates are available.")
-    ordered_template_names = copy(template_names)
-    default_index = findfirst(==("all-in-one"), ordered_template_names)
-    if !isnothing(default_index)
-        default_template = popat!(ordered_template_names, default_index)
-        pushfirst!(ordered_template_names, default_template)
+    ordered_template_names = String[]
+    for preferred_name in ("all-in-one", "simple", "minimum")
+        preferred_name in template_names && push!(ordered_template_names, preferred_name)
     end
+    append!(
+        ordered_template_names,
+        sort(filter(name -> name ∉ ordered_template_names, template_names)),
+    )
 
     println(output, "Package templates available:")
     for (index, template_name) in enumerate(ordered_template_names)
