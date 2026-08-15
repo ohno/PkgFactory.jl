@@ -14,5 +14,7 @@ Modules = [
     PkgFactory.LocalUI,
     PkgFactory.Templates,
     PkgFactory.Verifications,
+    PkgFactory.WebAPI,
+    PkgFactory.WebUI,
 ]
 ```

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Create a Julia package repository with GitHub automation.">
+  <title>PkgFactory.jl</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="PkgFactory home">
+        <span class="julia-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>PkgFactory.jl</span>
+      </a>
+      <div class="header-actions">
+        <div id="account" class="account" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="account-label">GitHub not connected</span>
+        </div>
+        <a class="github-link" href="https://github.com/ohno/PkgFactory.jl" target="_blank" rel="noreferrer" aria-label="Open PkgFactory on GitHub">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.5v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5A11.5 11.5 0 0 0 12 .7Z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">JULIA PACKAGE STARTER</p>
+      <h1 id="page-title">Create a package repository.</h1>
+      <p>Connect GitHub, choose a template, and publish a repository with CI, documentation, and release automation already configured.</p>
+      <div class="security-notes" aria-label="Security notes">
+        <span>OAuth device flow</span>
+        <span>Token kept in this tab</span>
+        <span>GitHub API only</span>
+      </div>
+    </section>
+
+    <div class="workflow" aria-label="Package creation workflow">
+      <section id="connect-panel" class="workflow-card is-active" data-step="1">
+        <div class="card-heading">
+          <span class="step-badge">1</span>
+          <div>
+            <div class="title-row">
+              <h2>Connect GitHub</h2>
+              <span class="step-state">Current step</span>
+            </div>
+            <p>Authorize PkgFactory for this browser session using GitHub's one-time device flow.</p>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="info-panel">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-4 12.7V18a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-3.3A7 7 0 0 0 12 2Zm2 11.6-.8.5V18h-2.4v-3.9l-.8-.5a4.5 4.5 0 1 1 4 0Z"/></svg>
+            <p>Your access token is held only in memory and is discarded when this tab closes.</p>
+          </div>
+          <p class="permission-copy">Requests repository, workflow, profile, and organization read permissions to generate the selected package automation.</p>
+
+          <button id="connect-button" class="button button-primary" type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.5v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5A11.5 11.5 0 0 0 12 .7Z"/></svg>
+            Connect with GitHub
+          </button>
+          <div id="connect-error" class="notice notice-error" role="alert" hidden></div>
+
+          <div id="device-card" class="device-card" hidden>
+            <div>
+              <span class="device-label">One-time user code</span>
+              <strong id="device-code">—</strong>
+            </div>
+            <button id="copy-code" class="button button-secondary button-small" type="button">Copy code</button>
+            <a id="verification-link" class="button button-primary" href="https://github.com/login/device" target="_blank" rel="noreferrer">Copy &amp; authorize</a>
+            <p id="device-status" class="device-status" role="status">Waiting for authorization…</p>
+          </div>
+        </div>
+      </section>
+
+      <form id="package-form" class="package-flow" hidden>
+        <section class="workflow-card is-active" data-step="2">
+          <div class="card-heading">
+            <span class="step-badge">2</span>
+            <div>
+              <div class="title-row"><h2>Create repository</h2><span class="step-state">Required</span></div>
+              <p>Choose where the repository will live and give your package its Julia name.</p>
+            </div>
+          </div>
+          <div class="card-body field-grid two-columns">
+            <label class="field">
+              <span>Repository owner</span>
+              <select id="owner" name="owner" required></select>
+            </label>
+            <label class="field">
+              <span>Visibility</span>
+              <select id="visibility" name="visibility">
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+              </select>
+            </label>
+            <label class="field full-width">
+              <span>Package name</span>
+              <div class="input-suffix"><input id="package-name" name="package_name" autocomplete="off" value="MyPkg" required><span>.jl</span></div>
+              <small>UpperCamelCase, at least five characters, without a “Julia” prefix.</small>
+              <small id="package-availability" class="availability-status" role="status" aria-live="polite"></small>
+            </label>
+          </div>
+        </section>
+
+        <section class="workflow-card" data-step="3">
+          <div class="card-heading">
+            <span class="step-badge">3</span>
+            <div>
+              <div class="title-row"><h2>Generate package template</h2><span class="step-state">Required</span></div>
+              <p>Select the starter files and metadata for the initial package commit.</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <label class="field">
+              <span>Authors</span>
+              <input id="authors" name="authors" placeholder="Alice Smith, Bob Jones" required>
+              <small>Comma-separated; written to the package license and metadata.</small>
+            </label>
+            <label class="field">
+              <span>Description</span>
+              <textarea id="description" name="description" rows="3" placeholder="A concise description of what this package does." required></textarea>
+            </label>
+            <div class="field-grid two-columns">
+              <label class="field">
+                <span>Template</span>
+                <select id="template" name="template"></select>
+              </label>
+              <label class="field">
+                <span>Initial commit message</span>
+                <input id="commit-message" name="commit_message" value="Using PkgFactory.jl" required>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="workflow-card" data-step="4">
+          <div class="card-heading">
+            <span class="step-badge">4</span>
+            <div>
+              <div class="title-row"><h2>Configure automation</h2><span class="step-state is-optional">Optional</span></div>
+              <p>Documenter keys are generated automatically. Add coverage or resume a previous setup here.</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="automation-row">
+              <div class="automation-copy">
+                <strong>Documenter deployment</strong>
+                <small>Deploy key and <code>DOCUMENTER_KEY</code> repository secret</small>
+              </div>
+              <span class="configured-pill">Automatic</span>
+            </div>
+            <label class="field">
+              <span>Codecov upload token</span>
+              <input id="codecov-token" name="codecov_token" type="password" autocomplete="off" placeholder="Leave blank to skip CODECOV_TOKEN">
+            </label>
+            <label class="check-field">
+              <input id="resume" name="resume" type="checkbox">
+              <span><strong>Resume interrupted setup</strong><small>Continue a partial setup, including a repository that contains only its initial README.</small></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="workflow-card create-card" data-step="5">
+          <div class="card-heading">
+            <span class="step-badge">5</span>
+            <div>
+              <div class="title-row"><h2>Create and configure</h2><span class="step-state">Final step</span></div>
+              <p>PkgFactory will create the repository, commit the template, add <code>gh-pages</code>, and configure secrets.</p>
+            </div>
+          </div>
+          <div class="card-body create-actions">
+            <div id="form-error" class="notice notice-error" role="alert" hidden></div>
+            <button id="create-button" class="button button-primary" type="submit">Generate &amp; commit package</button>
+          </div>
+        </section>
+      </form>
+
+      <section id="creating-panel" class="workflow-card status-card" data-step="5" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="eyebrow">CREATING REPOSITORY</p>
+        <h2>Building your package…</h2>
+        <p>GitHub is preparing branches, encrypted secrets, and the initial commit.</p>
+      </section>
+
+      <section id="success-panel" class="workflow-card status-card success-card" data-step="6" hidden>
+        <div class="success-mark" aria-hidden="true">✓</div>
+        <p class="eyebrow">COMPLETED</p>
+        <h2>Your package is ready.</h2>
+        <p id="success-copy"></p>
+        <div class="success-actions">
+          <a id="repository-link" class="button button-success" href="#" target="_blank" rel="noreferrer">Go to repository</a>
+          <button id="create-another" class="button button-secondary" type="button">Create another package</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <span>PkgFactory.jl</span>
+    <span>Julia package scaffolding through the GitHub API</span>
+  </footer>
+</body>
+</html>

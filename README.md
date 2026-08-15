@@ -15,11 +15,17 @@ Run the following command in the Julia REPL or a notebook:
 import Pkg; Pkg.add(url="https://github.com/ohno/PkgFactory.git")
 ```
 
-After installation, load the package and start it:
+After installation, load the package and start the browser interface:
 
 ```julia
-import PkgFactory; PkgFactory.LocalUI.CLI()
+import PkgFactory; PkgFactory.WebUI.start()
 ```
+
+Open `http://127.0.0.1:8000/`, connect GitHub with the OAuth device flow, and
+configure the package. The access token is kept only in the browser tab's
+memory. The flow requests `repo`, `workflow`, `read:user`, and `read:org` so it
+can generate package files and GitHub Actions workflows. The terminal workflow
+remains available as `PkgFactory.LocalUI.CLI()`.
 
 ## Documentation
 

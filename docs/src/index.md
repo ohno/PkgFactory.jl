@@ -22,6 +22,25 @@ import Pkg; Pkg.add(url="https://github.com/ohno/PkgFactory.jl.git")
 ```julia
 import PkgFactory
 
+PkgFactory.WebUI.start()
+```
+
+Open `http://127.0.0.1:8000/` in a browser. The web interface authenticates
+with GitHub's OAuth device flow and uses the GitHub API to create the
+repository, commit the selected template, create the `gh-pages` branch, and
+configure the `DOCUMENTER_KEY` secret. The optional Codecov token is encrypted
+into `CODECOV_TOKEN`. The OAuth access token is held only in the current
+browser tab's memory and is not written to disk or browser storage. The flow
+requests `repo`, `workflow`, `read:user`, and `read:org` permissions so the
+generated commit may include GitHub Actions workflow files.
+
+An interrupted setup can be continued by enabling **Resume an interrupted
+setup**. PkgFactory checks that the existing `Project.toml` identifies the
+expected package before continuing.
+
+## Terminal interface
+
+```julia
 PkgFactory.LocalUI.CLI()
 ```
 

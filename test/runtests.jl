@@ -96,6 +96,8 @@ end
     @test occursin("Hello", PkgFactory.Templates.hello())
     @test occursin("Hello", PkgFactory.LocalAPI.hello())
     @test occursin("Hello", PkgFactory.LocalUI.hello())
+    @test occursin("Hello", PkgFactory.WebAPI.hello())
+    @test occursin("Hello", PkgFactory.WebUI.hello())
 end
 
 @testset "verify_owner_name" begin
@@ -666,4 +668,346 @@ end
     text = String(take!(output))
     @test occursin("Codecov:     skipped", text)
     @test occursin("no repository was created", text)
+end
+
+@testset "web OAuth device flow" begin
+    calls = NamedTuple[]
+    requester = function (method, url; headers, body, status_exception)
+        push!(calls, (; method, url, headers, body, status_exception))
+        response = if endswith(url, "/device/code")
+            Dict(
+                "device_code" => "device-code",
+                "user_code" => "ABCD-1234",
+                "verification_uri" => "https://github.com/login/device",
+                "expires_in" => 900,
+                "interval" => 5,
+            )
+        else
+            Dict(
+                "access_token" => "github-token",
+                "token_type" => "bearer",
+                "scope" => "read:user,repo",
+            )
+        end
+        return PkgFactory.WebAPI.HTTP.Response(
+            200,
+            PkgFactory.WebAPI.JSON3.write(response),
+        )
+    end
+
+    device = PkgFactory.WebAPI.device_flow_begin("client-id"; requester = requester)
+    @test device["user_code"] == "ABCD-1234"
+    @test occursin("client_id=client-id", calls[1].body)
+    @test occursin(
+        "scope=read:user%20read:org%20repo%20workflow",
+        calls[1].body,
+    )
+
+    token = PkgFactory.WebAPI.device_flow_poll(
+        "device-code",
+        "client-id";
+        requester = requester,
+    )
+    @test token["access_token"] == "github-token"
+    @test occursin("device_code=device-code", calls[2].body)
+
+    connection_error = try
+        PkgFactory.WebAPI.device_flow_begin(
+            "client-id";
+            requester = (args...; kwargs...) -> error("internal network detail"),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test connection_error isa PkgFactory.WebAPI.GitHubAPIError
+    @test connection_error.status == 503
+    @test !occursin("internal network detail", sprint(showerror, connection_error))
+end
+
+@testset "web GitHub repository owners" begin
+    requester = function (method, url; headers, body, status_exception)
+        @test method == "GET"
+        @test any(header -> header == ("Authorization" => "Bearer token"), headers)
+        response =
+            endswith(url, "/user") ?
+            Dict("login" => "ohno", "name" => "Shuhei OHNO") :
+            [Dict("login" => "ZetaOrg"), Dict("login" => "AlphaOrg")]
+        return PkgFactory.WebAPI.HTTP.Response(
+            200,
+            PkgFactory.WebAPI.JSON3.write(response),
+        )
+    end
+
+    owners = PkgFactory.WebAPI.get_repository_owners("token"; requester = requester)
+    @test getindex.(owners, "login") == ["ohno", "AlphaOrg", "ZetaOrg"]
+    @test getindex.(owners, "kind") == ["user", "organization", "organization"]
+
+    personal_only_requester = function (method, url; headers, body, status_exception)
+        response = endswith(url, "/user") ? Dict("login" => "ohno", "name" => nothing) :
+                   Dict("message" => "Resource not accessible by integration")
+        status = endswith(url, "/user") ? 200 : 403
+        return PkgFactory.WebAPI.HTTP.Response(
+            status,
+            PkgFactory.WebAPI.JSON3.write(response),
+        )
+    end
+    personal_only = PkgFactory.WebAPI.get_repository_owners(
+        "token";
+        requester = personal_only_requester,
+    )
+    @test personal_only == [
+        Dict{String,Any}("login" => "ohno", "name" => "ohno", "kind" => "user"),
+    ]
+end
+
+@testset "web GitHub repository availability" begin
+    statuses = [404, 200]
+    requester = function (method, url; headers, body, status_exception)
+        @test method == "GET"
+        @test endswith(url, "/repos/ohno/MyPackage.jl")
+        status = popfirst!(statuses)
+        response = status == 404 ? Dict("message" => "Not Found") : Dict("name" => "MyPackage.jl")
+        return PkgFactory.WebAPI.HTTP.Response(
+            status,
+            PkgFactory.WebAPI.JSON3.write(response),
+        )
+    end
+
+    available = PkgFactory.WebAPI.repository_availability(
+        "token",
+        "ohno",
+        "MyPackage";
+        requester = requester,
+    )
+    existing = PkgFactory.WebAPI.repository_availability(
+        "token",
+        "ohno",
+        "MyPackage.jl";
+        requester = requester,
+    )
+    @test available == Dict("available" => true, "repository" => "ohno/MyPackage.jl")
+    @test existing == Dict("available" => false, "repository" => "ohno/MyPackage.jl")
+    @test_throws ErrorException PkgFactory.WebAPI.repository_availability(
+        "token",
+        "ohno",
+        "lowercase";
+        requester = requester,
+    )
+end
+
+@testset "web GitHub branch initialization delay" begin
+    attempts = Ref(0)
+    delays = Float64[]
+    requester = function (method, url; headers, body, status_exception)
+        attempts[] += 1
+        status, response =
+            attempts[] < 3 ?
+            (404, Dict("message" => "Not Found")) :
+            (200, Dict("object" => Dict("sha" => "initial-sha")))
+        return PkgFactory.WebAPI.HTTP.Response(
+            status,
+            PkgFactory.WebAPI.JSON3.write(response),
+        )
+    end
+    sha = PkgFactory.WebAPI._branch_head(
+        "token",
+        "ohno",
+        "MyPackage.jl",
+        "main";
+        requester = requester,
+        sleeper = delay -> push!(delays, delay),
+    )
+    @test sha == "initial-sha"
+    @test attempts[] == 3
+    @test delays == [1.0, 2.0]
+
+    error = try
+        PkgFactory.WebAPI._branch_head(
+            "token",
+            "ohno",
+            "MyPackage.jl",
+            "missing";
+            requester = (args...; kwargs...) -> PkgFactory.WebAPI.HTTP.Response(
+                404,
+                PkgFactory.WebAPI.JSON3.write(Dict("message" => "Not Found")),
+            ),
+            attempts = 1,
+            sleeper = _ -> nothing,
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test error isa PkgFactory.WebAPI.GitHubAPIError
+    @test occursin("GET /repos/ohno/MyPackage.jl/git/ref/heads/missing", error.message)
+end
+
+@testset "create package through GitHub API" begin
+    calls = NamedTuple[]
+    requester = function (method, url; headers, body, status_exception)
+        push!(calls, (; method, url, body))
+        status, response = if method == "GET" && endswith(url, "/user")
+            200, Dict("login" => "ohno")
+        elseif method == "GET" && endswith(url, "/repos/ohno/MyPackage.jl")
+            404, Dict("message" => "Not Found")
+        elseif method == "POST" && endswith(url, "/user/repos")
+            201, Dict("name" => "MyPackage.jl", "default_branch" => "main")
+        elseif method == "GET" && endswith(url, "/contents/Project.toml")
+            404, Dict("message" => "Not Found")
+        elseif method == "GET" && endswith(url, "/git/ref/heads/main")
+            200, Dict("object" => Dict("sha" => "parent-sha"))
+        elseif method == "GET" && endswith(url, "/git/commits/parent-sha")
+            200, Dict("tree" => Dict("sha" => "base-tree"))
+        elseif method == "POST" && endswith(url, "/git/trees")
+            201, Dict("sha" => "new-tree")
+        elseif method == "POST" && endswith(url, "/git/commits")
+            201, Dict("sha" => "package-commit")
+        elseif method == "PATCH" && endswith(url, "/git/refs/heads/main")
+            200, Dict("object" => Dict("sha" => "package-commit"))
+        elseif method == "GET" && endswith(url, "/git/ref/heads/gh-pages")
+            404, Dict("message" => "Not Found")
+        elseif method == "POST" && endswith(url, "/git/refs")
+            201, Dict("ref" => "refs/heads/gh-pages")
+        elseif method == "GET" && endswith(url, "/keys?per_page=100")
+            200, [Dict("title" => "Documenter")]
+        else
+            error("Unexpected GitHub request: $(method) $(url)")
+        end
+        return PkgFactory.WebAPI.HTTP.Response(
+            status,
+            PkgFactory.WebAPI.JSON3.write(response),
+        )
+    end
+
+    result = PkgFactory.WebAPI.create_package(
+        "token",
+        "ohno",
+        "MyPackage",
+        ["Alice Smith"],
+        "A package created in the browser";
+        template_name = "minimum",
+        requester = requester,
+        key_generator = () -> error("Existing Documenter key should be reused"),
+    )
+
+    @test result["repository"] == "ohno/MyPackage.jl"
+    @test result["url"] == "https://github.com/ohno/MyPackage.jl"
+    @test !result["resumed"]
+    @test any(call -> call.method == "POST" && endswith(call.url, "/user/repos"), calls)
+    tree_call = only(filter(call -> endswith(call.url, "/git/trees"), calls))
+    tree_body = PkgFactory.WebAPI.JSON3.read(tree_call.body, Dict{String,Any})
+    @test tree_body["base_tree"] == "base-tree"
+    @test any(entry -> entry["path"] == "Project.toml", tree_body["tree"])
+    pages_call = only(filter(
+        call -> call.method == "POST" && endswith(call.url, "/git/refs"),
+        calls,
+    ))
+    @test occursin("refs/heads/gh-pages", pages_call.body)
+end
+
+@testset "web repository secret encryption" begin
+    encrypted_request = Ref("")
+    public_key = PkgFactory.WebAPI.Base64.base64encode(zeros(UInt8, 32))
+    requester = function (method, url; headers, body, status_exception)
+        if method == "GET"
+            return PkgFactory.WebAPI.HTTP.Response(
+                200,
+                PkgFactory.WebAPI.JSON3.write(
+                    Dict("key" => public_key, "key_id" => "key-id"),
+                ),
+            )
+        end
+        encrypted_request[] = body
+        return PkgFactory.WebAPI.HTTP.Response(201, "")
+    end
+
+    PkgFactory.WebAPI._set_repository_secret(
+        "token",
+        "ohno",
+        "MyPackage.jl",
+        "TEST_SECRET",
+        "secret";
+        requester = requester,
+    )
+    request_body =
+        PkgFactory.WebAPI.JSON3.read(encrypted_request[], Dict{String,Any})
+    ciphertext =
+        PkgFactory.WebAPI.Base64.base64decode(request_body["encrypted_value"])
+    @test request_body["key_id"] == "key-id"
+    @test length(ciphertext) == 6 + 48
+end
+
+@testset "web UI HTTP routes" begin
+    root = PkgFactory.WebUI.handle_request(
+        PkgFactory.WebUI.HTTP.Request("GET", "/"),
+    )
+    @test root.status == 200
+    @test occursin("PkgFactory", String(root.body))
+    @test occursin("Create repository", String(root.body))
+    @test occursin("Generate package template", String(root.body))
+    @test occursin("value=\"MyPkg\"", String(root.body))
+    @test occursin("workflow, profile", String(root.body))
+    @test occursin("contains only its initial README", String(root.body))
+    @test occursin("default-src", PkgFactory.WebUI.HTTP.header(
+        root,
+        "Content-Security-Policy",
+    ))
+
+    stylesheet = PkgFactory.WebUI.handle_request(
+        PkgFactory.WebUI.HTTP.Request("GET", "/style.css"),
+    )
+    javascript = PkgFactory.WebUI.handle_request(
+        PkgFactory.WebUI.HTTP.Request("GET", "/app.js"),
+    )
+    @test stylesheet.status == 200
+    @test occursin("prefers-color-scheme", String(stylesheet.body))
+    @test javascript.status == 200
+    @test occursin("connectGitHub", String(javascript.body))
+    @test occursin("requiredScopes", String(javascript.body))
+    @test occursin("setDefaultAuthor(owners[0])", String(javascript.body))
+    @test occursin("checkPackageAvailability", String(javascript.body))
+    @test occursin("package-availability", String(root.body))
+
+    config = PkgFactory.WebUI.handle_request(
+        PkgFactory.WebUI.HTTP.Request("GET", "/api/config");
+        client_id = "test-client",
+    )
+    config_body = PkgFactory.WebAPI.JSON3.read(String(config.body), Dict{String,Any})
+    @test config.status == 200
+    @test config_body["client_id"] == "test-client"
+    @test "all-in-one" in config_body["templates"]
+
+    unauthorized = PkgFactory.WebUI.handle_request(
+        PkgFactory.WebUI.HTTP.Request("GET", "/api/github/owners"),
+    )
+    @test unauthorized.status == 400
+    @test occursin("authentication is required", String(unauthorized.body))
+
+    availability_requester = function (method, url; headers, body, status_exception)
+        @test method == "GET"
+        @test endswith(url, "/repos/ohno/MyPackage.jl")
+        return PkgFactory.WebAPI.HTTP.Response(
+            404,
+            PkgFactory.WebAPI.JSON3.write(Dict("message" => "Not Found")),
+        )
+    end
+    availability = PkgFactory.WebUI.handle_request(
+        PkgFactory.WebUI.HTTP.Request(
+            "POST",
+            "/api/github/repository-availability",
+            ["Authorization" => "Bearer token"],
+            PkgFactory.WebAPI.JSON3.write(
+                Dict("owner" => "ohno", "package_name" => "MyPackage"),
+            ),
+        );
+        requester = availability_requester,
+    )
+    availability_body = PkgFactory.WebAPI.JSON3.read(
+        String(availability.body),
+        Dict{String,Any},
+    )
+    @test availability.status == 200
+    @test availability_body["available"]
+    @test availability_body["repository"] == "ohno/MyPackage.jl"
 end
