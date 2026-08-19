@@ -7,7 +7,10 @@ mutable struct FakeCommandRunner
     inputs::Vector{Union{Nothing,String}}
     authenticated::Bool
     repository_exists::Bool
+    registered_package_names::Vector{String}
     project_file::Union{Nothing,String}
+    main_branch_exists::Bool
+    staged_changes::Bool
     gh_pages_exists::Bool
     deploy_key_exists::Bool
     documenter_secret_exists::Bool
@@ -26,7 +29,10 @@ end
 function FakeCommandRunner(;
     authenticated::Bool = true,
     repository_exists::Bool = false,
+    registered_package_names::Vector{String} = String[],
     project_file::Union{Nothing,String} = nothing,
+    main_branch_exists::Union{Nothing,Bool} = nothing,
+    staged_changes::Bool = true,
     gh_pages_exists::Bool = false,
     deploy_key_exists::Bool = false,
     documenter_secret_exists::Bool = false,
@@ -37,7 +43,10 @@ function FakeCommandRunner(;
         Union{Nothing,String}[],
         authenticated,
         repository_exists,
+        registered_package_names,
         project_file,
+        isnothing(main_branch_exists) ? repository_exists : main_branch_exists,
+        staged_changes,
         gh_pages_exists,
         deploy_key_exists,
         documenter_secret_exists,
@@ -64,10 +73,8 @@ function (runner::FakeCommandRunner)(
         return true, """{"login":"ohno","name":"Shuhei OHNO","id":59360244}""", ""
     elseif occursin("repo list", command)
         return true, "MyPkg.jl\nMyPkg1.jl\nMyPkg2.jl\n", ""
-    elseif occursin("api repos/", command) && occursin("--silent", command)
-        return runner.repository_exists,
-        "",
-        runner.repository_exists ? "" : "HTTP 404: Not Found"
+    elseif occursin("repos/JuliaRegistries/General/git/trees/", command)
+        return true, join(runner.registered_package_names, '\n'), ""
     elseif occursin("contents/Project.toml", command)
         if isnothing(runner.project_file)
             return false, "", "HTTP 404: Not Found"
@@ -78,7 +85,18 @@ function (runner::FakeCommandRunner)(
         "",
         runner.gh_pages_exists ? "" : "HTTP 404: Not Found"
     elseif occursin("git/ref/heads/main", command)
+        if occursin("--silent", command)
+            return runner.main_branch_exists,
+            "",
+            runner.main_branch_exists ? "" : "HTTP 404: Not Found"
+        end
         return true, "abc123\n", ""
+    elseif occursin("api repos/", command) && occursin("--silent", command)
+        return runner.repository_exists,
+        "",
+        runner.repository_exists ? "" : "HTTP 404: Not Found"
+    elseif occursin("diff --cached --quiet", command)
+        return !runner.staged_changes, "", ""
     elseif occursin("secret list", command)
         secrets = runner.documenter_secret_exists ? "DOCUMENTER_KEY\n" : ""
         return true, secrets, ""
@@ -269,6 +287,7 @@ end
     @test template_names == sort(template_names)
     @test "all-in-one" in template_names
     @test "minimum" in template_names
+    @test "simple" in template_names
 end
 
 @testset "list_files" begin
@@ -322,13 +341,34 @@ end
 
     all_in_one = render("all-in-one")
     minimum = render("minimum")
+    simple = render("simple")
 
     @test haskey(all_in_one, "src/MyPkg.jl")
     @test haskey(minimum, "src/MyPkg.jl")
+    @test haskey(simple, "src/MyPkg.jl")
+    for template in (all_in_one, simple, minimum)
+        @test occursin("## Quick Start", template["README.md"])
+        @test !occursin("## Installation", template["README.md"])
+    end
     @test occursin("version = \"0.0.1\"", all_in_one["Project.toml"])
     @test occursin("version = {v0.0.1}", all_in_one["CITATION.bib"])
     project_uuid = only(match(r"uuid = \"([^\"]+)\"", all_in_one["Project.toml"]).captures)
     @test occursin("MyPkg = \"$(project_uuid)\"", all_in_one["docs/Project.toml"])
+
+    existing_uuid = "12345678-1234-5678-1234-567812345678"
+    simple_with_existing_uuid = PkgFactory.Templates.generate_template_files_dict(
+        "ohno",
+        "MyPkg.jl",
+        ["Shuhei Ohno"],
+        "My special package",
+        "simple";
+        package_uuid = existing_uuid,
+    )
+    @test occursin("uuid = \"$(existing_uuid)\"", simple_with_existing_uuid["Project.toml"])
+    @test occursin(
+        "MyPkg = \"$(existing_uuid)\"",
+        simple_with_existing_uuid["docs/Project.toml"],
+    )
 
     @test !occursin("[extras]", all_in_one["Project.toml"])
     @test !occursin("[targets]", all_in_one["Project.toml"])
@@ -374,8 +414,58 @@ end
     @test !occursin("8fce2d05", all_in_one[".github/ISSUE_TEMPLATE/bug_report.md"])
     @test !occursin("Julia Version 1.10.10", all_in_one[".github/ISSUE_TEMPLATE/bug_report.md"])
 
+    @test occursin("Documenter = \"1\"", simple["docs/Project.toml"])
+    simple_project_uuid = only(match(r"uuid = \"([^\"]+)\"", simple["Project.toml"]).captures)
+    @test occursin("MyPkg = \"$(simple_project_uuid)\"", simple["docs/Project.toml"])
+    @test haskey(simple, "docs/make.jl")
+    @test haskey(simple, "docs/src/index.md")
+    @test haskey(simple, "docs/src/api.md")
+    @test occursin("\"Home\" => \"index.md\"", simple["docs/make.jl"])
+    @test occursin("\"API Reference\" => \"api.md\"", simple["docs/make.jl"])
+    @test occursin("Documenter", simple["docs/make.jl"])
+    @test occursin("```jldoctest", simple["src/MyPkg.jl"])
+    @test occursin("Test =", simple["test/Project.toml"])
+    @test !occursin("DocStringExtensions", simple["Project.toml"])
+    @test occursin("actions/workflows/CI.yml/badge.svg", simple["README.md"])
+    @test occursin("docs-stable-blue.svg", simple["README.md"])
+    @test occursin("codecov.io/gh/ohno/MyPkg.jl", simple["README.md"])
+    @test !occursin("github/license", simple["README.md"])
+    @test !occursin("github/license", simple["docs/src/index.md"])
+    @test occursin("API Reference", simple["README.md"])
+
+    simple_ci = simple[".github/workflows/CI.yml"]
+    @test occursin(raw"${{ matrix.version }}", simple_ci)
+    @test occursin("version: 'min'", simple_ci)
+    @test occursin("version: 'pre'", simple_ci)
+    @test occursin("julia-actions/julia-runtest", simple_ci)
+    @test occursin("julia-actions/julia-docdeploy", simple_ci)
+    @test !occursin("JET_TEST", simple_ci)
+    @test count(==(true), occursin.("coverage: true", eachline(IOBuffer(simple_ci)))) == 1
+    @test occursin("julia-actions/julia-processcoverage", simple_ci)
+    @test occursin("codecov/codecov-action", simple_ci)
+    @test occursin(raw"token: ${{ secrets.CODECOV_TOKEN }}", simple_ci)
+
+    for path in (
+        ".github/dependabot.yml",
+        ".github/ISSUE_TEMPLATE/bug_report.md",
+        ".github/ISSUE_TEMPLATE/feature_request.md",
+        ".github/workflows/Format.yml",
+        ".github/workflows/TagBot.yml",
+        "CITATION.bib",
+        "docs/src/developer.md",
+        "docs/src/user.md",
+    )
+        @test !haskey(simple, path)
+    end
+    @test !any(
+        occursin(dependency, content) for
+            dependency in ("Aqua", "JET", "Runic") for
+            content in values(simple)
+    )
+
     @test haskey(minimum, ".github/workflows/CI.yml")
     @test occursin("actions/workflows/CI.yml/badge.svg", minimum["README.md"])
+    @test !occursin("github/license", minimum["README.md"])
     @test occursin("Pkg.add(url=", minimum["README.md"])
     @test occursin("MyPkg.hello()", minimum["README.md"])
     @test occursin(raw"${{ matrix.version }}", minimum[".github/workflows/CI.yml"])
@@ -425,6 +515,17 @@ end
     repository_names =
         PkgFactory.LocalAPI.get_repository_names("ohno"; command_runner = runner)
     @test repository_names == ["MyPkg.jl", "MyPkg1.jl", "MyPkg2.jl"]
+
+    runner = FakeCommandRunner(; registered_package_names = ["MyPkg", "MyPkgTools"])
+    package_names = PkgFactory.LocalAPI.get_registered_package_names(
+        "MyPkg";
+        command_runner = runner,
+    )
+    @test package_names == ["MyPkg", "MyPkgTools"]
+    @test any(
+        occursin("repos/JuliaRegistries/General/git/trees/master:M", command) for
+        command in runner.commands
+    )
 end
 
 @testset "create_package_with_jll" begin
@@ -505,9 +606,10 @@ end
 end
 
 @testset "resume package creation" begin
+    existing_uuid = "12345678-1234-5678-1234-567812345678"
     runner = FakeCommandRunner(
         repository_exists = true,
-        project_file = "name = \"MyPkg\"\n",
+        project_file = "name = \"MyPkg\"\nuuid = \"$(existing_uuid)\"\n",
         gh_pages_exists = true,
         deploy_key_exists = true,
         documenter_secret_exists = true,
@@ -524,7 +626,68 @@ end
         key_generator = () -> error("Keys must not be regenerated"),
     )
     @test !any(occursin("repo create", command) for command in runner.commands)
-    @test !any(occursin("git commit", command) for command in runner.commands)
+    @test any(occursin("clone --branch main --single-branch", command) for command in runner.commands)
+    @test any(occursin("diff --cached --quiet", command) for command in runner.commands)
+    @test any(occursin(" commit -m ", command) for command in runner.commands)
+    @test any(occursin("push origin HEAD:main", command) for command in runner.commands)
+
+    runner = FakeCommandRunner(
+        repository_exists = true,
+        project_file = "name = \"MyPkg\"\nuuid = \"$(existing_uuid)\"\n",
+        staged_changes = false,
+        gh_pages_exists = true,
+        deploy_key_exists = true,
+        documenter_secret_exists = true,
+    )
+    @test PkgFactory.LocalAPI.create_package_with_jll(
+        "ohno",
+        "MyPkg.jl",
+        ["Shuhei Ohno"],
+        "My special package";
+        resume = true,
+        command_runner = runner,
+        key_generator = () -> error("Keys must not be regenerated"),
+    )
+    @test !any(occursin(" commit -m ", command) for command in runner.commands)
+    @test !any(occursin("push origin HEAD:main", command) for command in runner.commands)
+
+    runner = FakeCommandRunner(
+        repository_exists = true,
+        project_file = nothing,
+        main_branch_exists = true,
+        gh_pages_exists = true,
+        deploy_key_exists = true,
+        documenter_secret_exists = true,
+    )
+    @test PkgFactory.LocalAPI.create_package_with_jll(
+        "ohno",
+        "MyPkg.jl",
+        ["Shuhei Ohno"],
+        "My special package";
+        resume = true,
+        command_runner = runner,
+        key_generator = () -> error("Keys must not be regenerated"),
+    )
+    @test any(occursin("clone --branch main --single-branch", command) for command in runner.commands)
+    @test !any(occursin("repo create", command) for command in runner.commands)
+
+    runner = FakeCommandRunner(
+        repository_exists = true,
+        project_file = nothing,
+        main_branch_exists = false,
+    )
+    @test PkgFactory.LocalAPI.create_package_with_jll(
+        "ohno",
+        "MyPkg.jl",
+        ["Shuhei Ohno"],
+        "My special package";
+        resume = true,
+        command_runner = runner,
+        key_generator = () -> ("ssh-ed25519 public", "documenter-secret"),
+    )
+    @test !any(occursin("repo create", command) for command in runner.commands)
+    @test !any(occursin(" clone ", command) for command in runner.commands)
+    @test any(occursin("push -u origin main", command) for command in runner.commands)
 
     runner =
         FakeCommandRunner(repository_exists = true, project_file = "name = \"OtherPkg\"\n")
@@ -622,6 +785,7 @@ end
         package_creator = creator,
         repository_checker = (owner, repo) -> repo == "MyPkg.jl",
         repository_names_provider = owner -> existing_repository_names,
+        registered_package_names_provider = package -> String[],
         repository_owners_provider = () ->
             [(login = "ohno", name = "Shuhei OHNO", kind = :user),],
         templates_provider = () -> ["minimum", "all-in-one"],
@@ -637,6 +801,48 @@ end
     @test !only(creator.calls).options.resume
 end
 
+@testset "registered package name suggestions" begin
+    input = IOBuffer(
+        join(
+            [
+                "1",
+                "MyPkg",
+                "",
+                "Alice Smith",
+                "My package description",
+                "",
+                "",
+                "",
+                "",
+                "y",
+            ],
+            "\n",
+        ) * "\n",
+    )
+    output = IOBuffer()
+    creator = FakePackageCreator(Any[], true)
+
+    @test PkgFactory.LocalUI.CLI(;
+        input = input,
+        output = output,
+        environment = Dict{String,String}(),
+        status_checker = () -> true,
+        package_creator = creator,
+        repository_checker = (owner, repo) -> false,
+        repository_names_provider = owner -> String[],
+        registered_package_names_provider = package -> ["MyPkg", "MyPkg1"],
+        repository_owners_provider = () ->
+            [(login = "ohno", name = "Shuhei OHNO", kind = :user),],
+        templates_provider = () -> ["minimum", "all-in-one"],
+    )
+
+    text = String(take!(output))
+    @test occursin("Package MyPkg is already registered.", text)
+    @test occursin("1. MyPkg2 (default)", text)
+    @test only(creator.calls).args[2] == "MyPkg2.jl"
+    @test !only(creator.calls).options.resume
+end
+
 @testset "interactive local UI" begin
     input = IOBuffer(
         join(
@@ -646,7 +852,7 @@ end
                 "MyPkg",
                 "Alice, Bob",
                 "My package description",
-                "2",
+                "3",
                 "2",
                 "",
                 "codecov-secret",
@@ -670,8 +876,9 @@ end
         status_checker = () -> true,
         package_creator = creator,
         repository_checker = (owner, repo) -> false,
+        registered_package_names_provider = package -> String[],
         repository_owners_provider = () -> repository_owners,
-        templates_provider = () -> ["all-in-one", "minimum"],
+        templates_provider = () -> ["minimum", "all-in-one", "simple"],
     )
 
     text = String(take!(output))
@@ -681,11 +888,12 @@ end
     @test occursin("qumpoo/MyPkg.jl", text)
     @test occursin("Created: https://github.com/qumpoo/MyPkg.jl", text)
     @test !occursin("Resume its setup?", text)
-    @test occursin("Select repository owner (example: 1, default: 1):", text)
+    @test occursin("Select repository owner (default: 1):", text)
     @test occursin("Package templates available:", text)
     @test occursin("1. all-in-one (default)", text)
-    @test occursin("2. minimum", text)
-    @test occursin("Select template (example: 1, default: 1):", text)
+    @test occursin("2. simple", text)
+    @test occursin("3. minimum", text)
+    @test occursin("Select template (default: 1):", text)
     @test occursin("Package name (example: MyPkg):", text)
     @test occursin(
         "Authors (comma-separated; written to LICENSE) (example: Alice Smith, Bob Jones):",
@@ -695,7 +903,7 @@ end
     @test occursin("Repository visibility:", text)
     @test occursin("1. public (default)", text)
     @test occursin("2. private", text)
-    @test occursin("Select visibility (example: 2, default: 1):", text)
+    @test occursin("Select visibility (default: 1):", text)
     @test occursin("Initial commit message (default: Using PkgFactory.jl):", text)
     @test occursin(
         "Codecov token (optional, example: 01234567-89ab-cdef-0123-456789abcdef):",
@@ -758,6 +966,8 @@ end
         status_checker = () -> true,
         package_creator = creator,
         repository_checker = (owner, repo) -> true,
+        registered_package_names_provider =
+            package -> error("Registered packages must not be loaded when resuming"),
         repository_owners_provider = () ->
             [(login = "ohno", name = "Shuhei OHNO", kind = :user),],
         templates_provider = () -> ["minimum", "all-in-one"],
@@ -765,7 +975,7 @@ end
 
     text = String(take!(output))
     @test occursin("Repository ohno/MyPkg.jl already exists.", text)
-    @test occursin("Resume its setup? (example: y, default: n) (y/n):", text)
+    @test occursin("Resume its setup? (default: n) (y/n):", text)
     @test occursin("1. all-in-one (default)", text)
     @test occursin("Codecov:     skipped", text)
     @test only(creator.calls).args[5] == ""
@@ -785,7 +995,7 @@ end
     )
     @test isempty(creator.calls)
     text = String(take!(output))
-    @test occursin("Log in to GitHub now? (example: y, default: y) (y/n):", text)
+    @test occursin("Log in to GitHub now? (default: y) (y/n):", text)
     @test occursin("authentication is required", text)
 
     input = IOBuffer("1\nMyPkg\nAlice\nMy package description\n\n\n\n\nn\n")
@@ -796,6 +1006,7 @@ end
         status_checker = () -> true,
         package_creator = creator,
         repository_checker = (owner, repo) -> false,
+        registered_package_names_provider = package -> String[],
         repository_owners_provider = () ->
             [(login = "ohno", name = "Shuhei OHNO", kind = :user),],
         templates_provider = () -> ["all-in-one", "minimum"],

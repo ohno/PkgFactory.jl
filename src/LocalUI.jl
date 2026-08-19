@@ -23,10 +23,13 @@ function _read_line(
     default::Union{Nothing,String} = nothing,
     example::Union{Nothing,String} = nothing,
 )
-    annotations = String[]
-    !isnothing(example) && push!(annotations, "example: $(example)")
-    !isnothing(default) && push!(annotations, "default: $(default)")
-    annotation = isempty(annotations) ? "" : " ($(join(annotations, ", ")))"
+    annotation = if !isnothing(default)
+        " (default: $(default))"
+    elseif !isnothing(example)
+        " (example: $(example))"
+    else
+        ""
+    end
     suffix = "$(annotation): "
     print(output, message, suffix)
     flush(output)
@@ -58,9 +61,12 @@ function _prompt_yes_no(
     default::Union{Nothing,Bool} = nothing,
     example::String = "y",
 )::Bool
-    annotations = ["example: $(example)"]
-    !isnothing(default) && push!(annotations, "default: $(default ? "y" : "n")")
-    suffix = " ($(join(annotations, ", "))) (y/n): "
+    annotation = if isnothing(default)
+        "example: $(example)"
+    else
+        "default: $(default ? "y" : "n")"
+    end
+    suffix = " ($(annotation)) (y/n): "
     while true
         print(output, message, suffix)
         flush(output)
@@ -75,7 +81,9 @@ end
 
 function _read_secret(input::IO, output::IO, message::String)::String
     if input isa Base.TTY && input === stdin
-        secret = read(Base.getpass(input, output, message), String)
+        secret = Base.shred!(Base.getpass(input, output, message)) do secret_buffer
+            read(secret_buffer, String)
+        end
         println(output)
         return strip(secret)
     end
@@ -178,6 +186,7 @@ function _prompt_package_name(
     owner_name::String;
     repository_checker,
     repository_names_provider,
+    registered_package_names_provider,
 )
     repo_name = _prompt_value(
         input,
@@ -189,29 +198,48 @@ function _prompt_package_name(
     )
     repo_name = LocalAPI._normalize_repo_name(repo_name)
     known_repository_names = String[]
+    registered_names_by_initial = Dict{Char,Vector{String}}()
 
-    while repository_checker(owner_name, repo_name)
-        println(output, "Repository $(owner_name)/$(repo_name) already exists.")
-        _prompt_yes_no(input, output, "Resume its setup?"; default = false) &&
-            return (repo_name = repo_name, resume = true)
+    while true
+        package_name = LocalAPI._get_package_name(repo_name)
+        repository_exists = repository_checker(owner_name, repo_name)
 
+        if repository_exists
+            println(output, "Repository $(owner_name)/$(repo_name) already exists.")
+            _prompt_yes_no(input, output, "Resume its setup?"; default = false) &&
+                return (repo_name = repo_name, resume = true)
+        end
+
+        initial = uppercase(first(package_name))
+        registered_package_names = get!(registered_names_by_initial, initial) do
+            registered_package_names_provider(package_name)
+        end
+        package_is_registered =
+            lowercase(package_name) in Set(lowercase.(registered_package_names))
+        if !repository_exists && !package_is_registered
+            return (repo_name = repo_name, resume = false)
+        end
+
+        package_is_registered &&
+            println(output, "Package $(package_name) is already registered.")
         append!(known_repository_names, repository_names_provider(owner_name))
+        append!(known_repository_names, ["$(name).jl" for name in registered_package_names])
         push!(known_repository_names, repo_name)
         suggestions = _suggest_package_names(repo_name, unique(known_repository_names))
         repo_name = _prompt_suggested_package_name(input, output, suggestions)
     end
-
-    return (repo_name = repo_name, resume = false)
 end
 
 function _prompt_template(input::IO, output::IO, template_names::Vector{String})::String
     isempty(template_names) && error("No package templates are available.")
-    ordered_template_names = copy(template_names)
-    default_index = findfirst(==("all-in-one"), ordered_template_names)
-    if !isnothing(default_index)
-        default_template = popat!(ordered_template_names, default_index)
-        pushfirst!(ordered_template_names, default_template)
+    ordered_template_names = String[]
+    for preferred_name in ("all-in-one", "simple", "minimum")
+        preferred_name in template_names && push!(ordered_template_names, preferred_name)
     end
+    append!(
+        ordered_template_names,
+        sort(filter(name -> name ∉ ordered_template_names, template_names)),
+    )
 
     println(output, "Package templates available:")
     for (index, template_name) in enumerate(ordered_template_names)
@@ -321,6 +349,7 @@ function CLI(;
     package_creator = LocalAPI.create_package_with_jll,
     repository_checker = LocalAPI.check_repo,
     repository_names_provider = LocalAPI.get_repository_names,
+    registered_package_names_provider = LocalAPI.get_registered_package_names,
     repository_owners_provider = LocalAPI.get_repository_owners,
     templates_provider = Templates.list_templates,
     secret_reader = _read_secret,
@@ -354,6 +383,7 @@ function CLI(;
             owner_name;
             repository_checker = repository_checker,
             repository_names_provider = repository_names_provider,
+            registered_package_names_provider = registered_package_names_provider,
         )
     catch e
         println(output, "Failed to check package name availability: $(sprint(showerror, e))")

@@ -13,7 +13,7 @@
 
 {{{DESCR}}}
 
-## Installation
+## Quick Start
 
 Run the following command in the Julia REPL or a notebook:
 

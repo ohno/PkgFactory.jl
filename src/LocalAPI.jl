@@ -283,6 +283,31 @@ function get_repository_names(
     return filter(!isempty, strip.(split(response, '\n')))
 end
 
+"""
+$(DocStringExtensions.TYPEDSIGNATURES)
+
+List registered Julia package names that begin with the same letter as `package_name`.
+
+```
+package_names = PkgFactory.LocalAPI.get_registered_package_names("MyPkg")
+```
+"""
+function get_registered_package_names(
+    package_name::String;
+    command_runner = _run_command,
+)::Vector{String}
+    check_package = Verifications.verify_package_name(package_name)
+    check_package == "OK" || error("Package name is not valid: $(check_package)")
+
+    initial = uppercase(first(package_name))
+    jq = ".tree[].path"
+    response = _run_command_or_throw(
+        `$(gh_executable()) api repos/JuliaRegistries/General/git/trees/master:$(initial) --jq $(jq)`;
+        command_runner = command_runner,
+    )
+    return filter(!isempty, strip.(split(response, '\n')))
+end
+
 function _get_project_file(
     owner_name::String,
     repo_name::String;
@@ -341,6 +366,90 @@ function _create_local_commit(
         command_runner = command_runner,
     )
     return true
+end
+
+function _get_project_value(project_file::String, key::String)::Union{Nothing,String}
+    value_match = match(Regex("(?m)^\\s*$(key)\\s*=\\s*\"([^\"]+)\""), project_file)
+    return isnothing(value_match) ? nothing : String(value_match.captures[1])
+end
+
+function _main_branch_exists(
+    owner_name::String,
+    repo_name::String;
+    command_runner = _run_command,
+)::Bool
+    repo_name = _normalize_repo_name(repo_name)
+    cmd = `$(gh_executable()) api repos/$(owner_name)/$(repo_name)/git/ref/heads/main --silent`
+    ok, _, stderr = command_runner(cmd; env = Dict{String,String}(), input = nothing)
+    ok && return true
+    occursin("404", stderr) && return false
+    error("Command failed: $(cmd)\nSTDERR:\n$(stderr)")
+end
+
+function _update_existing_package(
+    owner_name::String,
+    repo_name::String,
+    author_names::Vector{String},
+    package_description::String,
+    template_name::String,
+    commit_message::String;
+    package_uuid::Union{Nothing,String} = nothing,
+    command_runner = _run_command,
+)::Bool
+    repo_name = _normalize_repo_name(repo_name)
+    paths_and_contents = Templates.generate_template_files_dict(
+        owner_name,
+        repo_name,
+        author_names,
+        package_description,
+        template_name;
+        package_uuid = package_uuid,
+    )
+    git_user = get_authenticated_user(; command_runner = command_runner)
+
+    return mktempdir() do tempdir
+        source_path = joinpath(tempdir, "repository")
+        _run_command_or_throw(
+            `$(gh_executable()) auth setup-git`;
+            env = _git_path_environment(),
+            command_runner = command_runner,
+        )
+        _run_command_or_throw(
+            `$(git_executable()) clone --branch main --single-branch https://github.com/$(owner_name)/$(repo_name).git $(source_path)`;
+            command_runner = command_runner,
+        )
+        _write_template_files(source_path, paths_and_contents)
+        _run_command_or_throw(
+            `$(git_executable()) -C $(source_path) config user.name $(git_user.login)`;
+            command_runner = command_runner,
+        )
+        _run_command_or_throw(
+            `$(git_executable()) -C $(source_path) config user.email $(git_user.email)`;
+            command_runner = command_runner,
+        )
+        _run_command_or_throw(
+            `$(git_executable()) -C $(source_path) add .`;
+            command_runner = command_runner,
+        )
+
+        unchanged, _, stderr = command_runner(
+            `$(git_executable()) -C $(source_path) diff --cached --quiet`;
+            env = Dict{String,String}(),
+            input = nothing,
+        )
+        unchanged && return false
+        isempty(strip(stderr)) || error("Failed to inspect the rendered package changes: $(stderr)")
+
+        _run_command_or_throw(
+            `$(git_executable()) -C $(source_path) commit -m $(commit_message)`;
+            command_runner = command_runner,
+        )
+        _run_command_or_throw(
+            `$(git_executable()) -C $(source_path) push origin HEAD:main`;
+            command_runner = command_runner,
+        )
+        return true
+    end
 end
 
 """
@@ -645,10 +754,14 @@ function create_package_with_jll(
         )
     end
 
-    project_file =
-        repository_exists ?
-        _get_project_file(owner_name, repo_name; command_runner = command_runner) : nothing
-    if isnothing(project_file)
+    project_file = repository_exists ?
+                   _get_project_file(owner_name, repo_name; command_runner = command_runner) :
+                   nothing
+    main_branch_exists = repository_exists && (
+        !isnothing(project_file) ||
+        _main_branch_exists(owner_name, repo_name; command_runner = command_runner)
+    )
+    if !repository_exists || !main_branch_exists
         _create_initial_commit(
             owner_name,
             repo_name,
@@ -662,10 +775,30 @@ function create_package_with_jll(
         )
     else
         package_name = _get_package_name(repo_name)
-        occursin("name = \"$(package_name)\"", project_file) || error(
-            "The existing repository does not contain the expected package, \"$(package_name)\".",
+        package_uuid = nothing
+        if !isnothing(project_file)
+            _get_project_value(project_file, "name") == package_name || error(
+                "The existing repository does not contain the expected package, \"$(package_name)\".",
+            )
+            package_uuid = _get_project_value(project_file, "uuid")
+            isnothing(package_uuid) &&
+                error("The existing package Project.toml does not contain a UUID.")
+        end
+        updated = _update_existing_package(
+            owner_name,
+            repo_name,
+            author_names,
+            package_description,
+            template_name,
+            commit_message;
+            package_uuid = package_uuid,
+            command_runner = command_runner,
         )
-        @info "The initial package commit already exists."
+        if updated
+            @info "The existing package files were updated."
+        else
+            @info "The existing package files already match the selected template."
+        end
     end
 
     create_branch_gh_pages(owner_name, repo_name; command_runner = command_runner)
