@@ -390,12 +390,14 @@ end
     end
 
     all_ci = all_in_one[".github/workflows/CI.yml"]
-    @test occursin(raw"${{ matrix.version }}", all_ci)
-    @test occursin("version: 'min'", all_ci)
-    @test count(==(true), occursin.("coverage: true", eachline(IOBuffer(all_ci)))) == 1
-    @test count(==(true), occursin.("jet: 'true'", eachline(IOBuffer(all_ci)))) == 1
-    @test occursin("version: 'pre'", all_ci)
-    @test occursin("continue-on-error:", all_ci)
+    @test !occursin("version: 'min'", all_ci)
+    @test count(==(true), occursin.("- 'pre'", eachline(IOBuffer(all_ci)))) == 2
+    @test occursin(raw"if: ${{ github.event_name == 'pull_request' }}", all_ci)
+    @test occursin(raw"if: ${{ github.event_name != 'pull_request' }}", all_ci)
+    @test occursin("- ubuntu-latest", all_ci)
+    @test occursin("macOS-latest", all_ci)
+    @test occursin("windows-latest", all_ci)
+    @test occursin(raw"matrix.os == 'ubuntu-latest' && matrix.version == '1'", all_ci)
     @test occursin("JET_TEST:", all_ci)
     @test occursin("@static if get(ENV, \"JET_TEST\", \"true\") == \"true\"", all_in_one["test/runtests.jl"])
 
@@ -434,13 +436,14 @@ end
     @test occursin("API Reference", simple["README.md"])
 
     simple_ci = simple[".github/workflows/CI.yml"]
-    @test occursin(raw"${{ matrix.version }}", simple_ci)
-    @test occursin("version: 'min'", simple_ci)
-    @test occursin("version: 'pre'", simple_ci)
+    @test !occursin("version: 'min'", simple_ci)
+    @test count(==(true), occursin.("- 'pre'", eachline(IOBuffer(simple_ci)))) == 1
+    @test !occursin("macOS-latest", simple_ci)
+    @test !occursin("windows-latest", simple_ci)
+    @test occursin(raw"continue-on-error: ${{ matrix.version == 'pre' }}", simple_ci)
     @test occursin("julia-actions/julia-runtest", simple_ci)
     @test occursin("julia-actions/julia-docdeploy", simple_ci)
     @test !occursin("JET_TEST", simple_ci)
-    @test count(==(true), occursin.("coverage: true", eachline(IOBuffer(simple_ci)))) == 1
     @test occursin("julia-actions/julia-processcoverage", simple_ci)
     @test occursin("codecov/codecov-action", simple_ci)
     @test occursin(raw"token: ${{ secrets.CODECOV_TOKEN }}", simple_ci)
@@ -468,9 +471,13 @@ end
     @test !occursin("github/license", minimum["README.md"])
     @test occursin("Pkg.add(url=", minimum["README.md"])
     @test occursin("MyPkg.hello()", minimum["README.md"])
-    @test occursin(raw"${{ matrix.version }}", minimum[".github/workflows/CI.yml"])
-    @test occursin("version: 'min'", minimum[".github/workflows/CI.yml"])
-    @test occursin("version: 'pre'", minimum[".github/workflows/CI.yml"])
+    minimum_ci = minimum[".github/workflows/CI.yml"]
+    @test !occursin("version: 'min'", minimum_ci)
+    @test !occursin("version: 'pre'", minimum_ci)
+    @test count(==(true), occursin.("version: '1'", eachline(IOBuffer(minimum_ci)))) == 1
+    @test !occursin("matrix:", minimum_ci)
+    @test !occursin("macOS-latest", minimum_ci)
+    @test !occursin("windows-latest", minimum_ci)
     @test !occursin("[extras]", minimum["Project.toml"])
     @test !occursin("[targets]", minimum["Project.toml"])
     @test occursin("julia = \"1.10\"", minimum["Project.toml"])

@@ -14,9 +14,10 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental }}
+    name: Julia ${{ matrix.version }} - Ubuntu
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.version == 'pre' }}
     timeout-minutes: 60
     permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
       actions: write
@@ -24,34 +25,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - version: 'min'
-            os: ubuntu-latest
-            experimental: false
-            jet: 'false'
-            coverage: false
-          - version: '1'
-            os: ubuntu-latest
-            experimental: false
-            jet: 'true'
-            coverage: true
-          - version: 'pre'
-            os: ubuntu-latest
-            experimental: true
-            jet: 'false'
-            coverage: false
-          - version: '1'
-            os: macOS-latest
-            experimental: false
-            jet: 'false'
-            coverage: false
-          - version: '1'
-            os: windows-latest
-            experimental: false
-            jet: 'false'
-            coverage: false
+        version:
+          - '1'
+          - 'pre'
     env:
-      JET_TEST: ${{ matrix.jet }}
+      JET_TEST: ${{ matrix.version == '1' }}
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
@@ -61,9 +39,46 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1
-        if: matrix.coverage
+        if: matrix.version == '1'
       - uses: codecov/codecov-action@v5
-        if: matrix.coverage
+        if: matrix.version == '1'
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+  cross-platform:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.version == 'pre' }}
+    timeout-minutes: 60
+    permissions:
+      actions: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macOS-latest
+          - windows-latest
+        version:
+          - '1'
+          - 'pre'
+    env:
+      JET_TEST: ${{ matrix.os == 'ubuntu-latest' && matrix.version == '1' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v3
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+      - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.os == 'ubuntu-latest' && matrix.version == '1'
+      - uses: codecov/codecov-action@v5
+        if: matrix.os == 'ubuntu-latest' && matrix.version == '1'
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
