@@ -38,6 +38,31 @@ An interrupted setup can be continued by enabling **Resume an interrupted
 setup**. PkgFactory checks that the existing `Project.toml` identifies the
 expected package before continuing.
 
+## Jupyter Notebook
+
+The notebook API separates the read-only preview from the GitHub operation:
+
+```julia
+config = PkgFactory.PackageConfig(
+    owner = "octocat",
+    name = "MyPkg",
+    authors = ["The Octocat"],
+    description = "A package created from Jupyter",
+)
+
+plan = PkgFactory.preview(config)
+display(plan)
+
+github = PkgFactory.github_device_login()
+PkgFactory.create!(plan; backend = github)
+```
+
+The device-flow token is kept only in the returned `GitHubAPI` object, whose
+display is always redacted. Optional secrets such as the Codecov token are
+passed only to `create!`, for example
+`create!(plan; backend = github, codecov_token = ENV["CODECOV_TOKEN"])`.
+The complete example is available in `examples/PkgFactory.ipynb`.
+
 ## Terminal interface
 
 ```julia

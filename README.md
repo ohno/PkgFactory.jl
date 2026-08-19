@@ -27,6 +27,29 @@ memory. The flow requests `repo`, `workflow`, `read:user`, and `read:org` so it
 can generate package files and GitHub Actions workflows. The terminal workflow
 remains available as `PkgFactory.LocalUI.CLI()`.
 
+## Jupyter Notebook
+
+Notebook workflows separate configuration, preview, authentication, and the
+GitHub-changing operation into individual cells:
+
+```julia
+config = PkgFactory.PackageConfig(
+    owner = "octocat",
+    name = "MyPkg",
+    authors = ["The Octocat"],
+    description = "A package created from Jupyter",
+)
+plan = PkgFactory.preview(config)
+display(plan)
+
+github = PkgFactory.github_device_login()
+PkgFactory.create!(plan; backend = github)
+```
+
+`preview` performs no network requests. The OAuth access token is kept inside
+a redacted in-memory object and is not included in the plan. See the runnable
+[Jupyter example](examples/PkgFactory.ipynb).
+
 ## Documentation
 
 - Home: https://ohno.github.io/PkgFactory.jl

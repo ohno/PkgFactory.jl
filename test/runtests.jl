@@ -100,6 +100,142 @@ end
     @test occursin("Hello", PkgFactory.WebUI.hello())
 end
 
+@testset "notebook package workflow" begin
+    config = PkgFactory.PackageConfig(
+        owner = " ohno ",
+        name = "MyPackage.jl",
+        authors = [" Alice Smith "],
+        description = " A package created from Jupyter ",
+        template = "minimum",
+    )
+    @test config.owner == "ohno"
+    @test config.name == "MyPackage"
+    @test config.authors == ["Alice Smith"]
+    @test config.description == "A package created from Jupyter"
+
+    plan = PkgFactory.preview(config)
+    @test plan.repository == "ohno/MyPackage.jl"
+    @test "src/MyPackage.jl" in plan.files
+    @test !any(occursin("PKG.jl"), plan.files)
+    preview_text = sprint(show, MIME"text/plain"(), plan)
+    @test occursin("https://github.com/ohno/MyPackage.jl", preview_text)
+    @test occursin("No changes have been made", preview_text)
+
+    @test_throws ErrorException PkgFactory.preview(PkgFactory.PackageConfig(
+        owner = "ohno",
+        name = "lowercase",
+        authors = ["Alice Smith"],
+        description = "Invalid package",
+    ))
+    @test_throws ErrorException PkgFactory.preview(PkgFactory.PackageConfig(
+        owner = "ohno",
+        name = "MyPackage",
+        authors = ["Alice Smith"],
+        description = "",
+    ))
+
+    backend = PkgFactory.GitHubAPI("notebook-secret-token")
+    @test !occursin("notebook-secret-token", sprint(show, backend))
+    @test occursin("redacted", sprint(show, backend))
+    withenv("GITHUB_TOKEN" => "environment-token", "GH_TOKEN" => nothing) do
+        @test PkgFactory.GitHubAPI().access_token == "environment-token"
+    end
+
+    creation_call = Ref{Any}()
+    creator = function (args...; kwargs...)
+        creation_call[] = (; args, options = (; kwargs...))
+        return Dict(
+            "repository" => "ohno/MyPackage.jl",
+            "url" => "https://github.com/ohno/MyPackage.jl",
+            "resumed" => false,
+        )
+    end
+    result = PkgFactory.create!(
+        plan;
+        backend = backend,
+        package_creator = creator,
+    )
+    @test result["repository"] == "ohno/MyPackage.jl"
+    @test creation_call[].args[1] == "notebook-secret-token"
+    @test creation_call[].args[2:6] == (
+        "ohno",
+        "MyPackage",
+        ["Alice Smith"],
+        "A package created from Jupyter",
+        "",
+    )
+    @test creation_call[].options.template_name == "minimum"
+    @test !creation_call[].options.resume
+    direct_result = PkgFactory.create!(
+        config;
+        backend = backend,
+        package_creator = creator,
+    )
+    @test direct_result["repository"] == "ohno/MyPackage.jl"
+end
+
+@testset "notebook GitHub device login" begin
+    polls = Ref(0)
+    requester = function (method, url; headers, body, status_exception)
+        response = if endswith(url, "/device/code")
+            Dict(
+                "device_code" => "device-code",
+                "user_code" => "ABCD-1234",
+                "verification_uri" => "https://github.com/login/device",
+                "expires_in" => 900,
+                "interval" => 1,
+            )
+        else
+            polls[] += 1
+            polls[] == 1 ? Dict("error" => "authorization_pending") : Dict(
+                "access_token" => "oauth-secret-token",
+                "token_type" => "bearer",
+                "scope" => "read:user,repo,workflow",
+            )
+        end
+        return PkgFactory.WebAPI.HTTP.Response(
+            200,
+            PkgFactory.WebAPI.JSON3.write(response),
+        )
+    end
+    delays = Int[]
+    output = IOBuffer()
+    backend = PkgFactory.github_device_login(
+        requester = requester,
+        sleeper = delay -> push!(delays, delay),
+        output = output,
+    )
+    login_text = String(take!(output))
+    @test backend isa PkgFactory.GitHubAPI
+    @test backend.access_token == "oauth-secret-token"
+    @test delays == [5, 5]
+    @test occursin("ABCD-1234", login_text)
+    @test occursin("authorization completed", login_text)
+    @test !occursin("oauth-secret-token", login_text)
+
+    missing_scope_requester = function (method, url; headers, body, status_exception)
+        response = endswith(url, "/device/code") ? Dict(
+            "device_code" => "device-code",
+            "user_code" => "ABCD-1234",
+            "verification_uri" => "https://github.com/login/device",
+            "expires_in" => 900,
+            "interval" => 5,
+        ) : Dict(
+            "access_token" => "oauth-secret-token",
+            "scope" => "read:user,repo",
+        )
+        return PkgFactory.WebAPI.HTTP.Response(
+            200,
+            PkgFactory.WebAPI.JSON3.write(response),
+        )
+    end
+    @test_throws ErrorException PkgFactory.github_device_login(
+        requester = missing_scope_requester,
+        sleeper = _ -> nothing,
+        output = IOBuffer(),
+    )
+end
+
 @testset "verify_owner_name" begin
     @test "OK" == PkgFactory.Verifications.verify_owner_name("ohno")
     @test "OK" != PkgFactory.Verifications.verify_owner_name("")
