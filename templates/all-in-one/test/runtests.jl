@@ -1,17 +1,10 @@
 using {{{PKG}}}
-using Aqua
 using Test
 
-@testset "Aqua.jl" begin
-    Aqua.test_all({{{PKG}}})
-end
+include("aqua.jl")
 
 @static if get(ENV, "JET_TEST", "true") == "true"
-    import JET
-
-    @testset "JET.jl" begin
-        JET.test_package({{{PKG}}}; target_modules = ({{{PKG}}},))
-    end
+    include("jet.jl")
 end
 
 @testset "{{{PKG}}}.hello" begin

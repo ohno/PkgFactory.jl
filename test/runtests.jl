@@ -525,6 +525,178 @@ end
     )
 end
 
+@testset "quality badges track dedicated workflows" begin
+    files = PkgFactory.Templates.generate_template_files_dict(
+        "example", "BadgePkg.jl", ["Example Author"], "Badge tests", "all-in-one",
+    )
+    for tool in ("Aqua", "JET")
+        script = lowercase(tool) * ".jl"
+        workflow = files[".github/workflows/$(tool).yml"]
+        @test occursin("name: $tool", workflow)
+        @test occursin("branches: [main]", workflow)
+        @test occursin("pull_request:", workflow)
+        @test occursin("workflow_dispatch:", workflow)
+        @test occursin("version: '1'", workflow)
+        @test occursin("using Pkg; Pkg.instantiate()", workflow)
+        @test occursin("julia --project=test --startup-file=no --color=yes test/$script", workflow)
+        @test occursin(raw"group: ${{ github.workflow }}-${{ github.ref }}", workflow)
+        @test !occursin("continue-on-error", workflow)
+        @test occursin("include(\"$script\")", files["test/runtests.jl"])
+        @test occursin("using BadgePkg", files["test/$script"])
+        @test !occursin("{{{", files["test/$script"])
+        for path in ("README.md", "docs/src/index.md")
+            markdown = files[path]
+            @test occursin("github/actions/workflow/status/example/BadgePkg.jl/$tool.yml?branch=main&event=push&label=", markdown)
+            @test occursin("actions/workflows/$tool.yml?query=branch%3Amain", markdown)
+            @test !occursin("tested_with", markdown)
+            @test !occursin("-passing-", markdown)
+        end
+    end
+    @test occursin("Aqua.test_all(BadgePkg)", files["test/aqua.jl"])
+    @test occursin("JET.test_package(BadgePkg; target_modules = (BadgePkg,))", files["test/jet.jl"])
+    for path in ("README.md", "docs/src/index.md")
+        @test occursin("label=Aqua&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2C", files[path])
+        @test occursin("label=%F0%9F%9B%A9%EF%B8%8F%20JET", files[path])
+    end
+    for template in ("simple", "minimum")
+        basic = PkgFactory.Templates.generate_template_files_dict(
+            "example", "BadgePkg.jl", ["Example Author"], "Badge tests", template,
+        )
+        @test !haskey(basic, ".github/workflows/Aqua.yml")
+        @test !haskey(basic, ".github/workflows/JET.yml")
+    end
+end
+
+@testset "all-in-one Colab notebook" begin
+    files = PkgFactory.Templates.generate_template_files_dict(
+        "example-owner", "NotebookPkg.jl", ["Example Author"], "Notebook tests", "all-in-one",
+    )
+    path = "examples/quickstart.ipynb"
+    notebook = PkgFactory.WebAPI.JSON3.read(files[path], Dict{String,Any})
+    @test notebook["nbformat"] == 4
+    @test notebook["nbformat_minor"] == 5
+    @test notebook["metadata"]["kernelspec"]["name"] == "julia"
+    @test notebook["metadata"]["kernelspec"]["language"] == "julia"
+    @test notebook["metadata"]["language_info"]["name"] == "julia"
+    @test !occursin("{{{", files[path])
+    @test !occursin("PreviewAllInOne", files[path])
+    cells = notebook["cells"]
+    @test length(unique(cell["id"] for cell in cells)) == length(cells)
+    code_cells = filter(cell -> cell["cell_type"] == "code", cells)
+    @test length(code_cells) == 4
+    for cell in code_cells
+        @test isempty(cell["outputs"])
+        @test isnothing(cell["execution_count"])
+        source = join(cell["source"])
+        @test Meta.parseall(source) isa Expr
+        @test !occursin(r"(?m)^!|^%|^pip ", source)
+    end
+    @test occursin("VERSION >= v\"1.12\"", join(code_cells[1]["source"]))
+    setup = join(code_cells[2]["source"])
+    @test occursin("Pkg.activate(mktempdir())", setup)
+    @test occursin("Pkg.add(url=\"https://github.com/example-owner/NotebookPkg.jl.git\", rev=\"main\")", setup)
+    @test occursin("import NotebookPkg", join(code_cells[3]["source"]))
+    @test occursin("NotebookPkg.hello()", join(code_cells[4]["source"]))
+    @test occursin("@assert message == \"Hello, World!\"", join(code_cells[4]["source"]))
+    for page in ("README.md", "docs/src/index.md")
+        @test occursin("[![Colab: open](https://badgen.net/static/Colab/open/007ec6?icon=", files[page])
+        @test occursin("&iconWidth=22)]", files[page])
+        @test !any(startswith(key, ".github/badges/") for key in keys(files))
+        @test !occursin(".github/badges/", files[page])
+        encoded = match(r"icon=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2C([^)&]+)", files[page]).captures[1]
+        logo = String(PkgFactory.WebAPI.Base64.base64decode(replace(encoded, "%2B" => "+", "%2F" => "/", "%3D" => "=")))
+        @test occursin("viewBox=\"0 5 24 14\"", logo)
+        @test !occursin("<rect", logo)
+        @test !occursin("background", logo)
+        @test occursin("#e8710a", logo)
+        @test occursin("#f9ab00", logo)
+        @test length(collect(eachmatch(r"<path ", logo))) == 5
+        @test !occursin("logo=googlecolab", files[page])
+        @test !occursin("colab-badge.svg", files[page])
+        @test occursin("https://colab.research.google.com/github/example-owner/NotebookPkg.jl/blob/main/$path", files[page])
+        @test occursin("Julia 1.12+", files[page])
+    end
+    for template in ("simple", "minimum")
+        basic = PkgFactory.Templates.generate_template_files_dict(
+            "example-owner", "NotebookPkg.jl", ["Example Author"], "Notebook tests", template,
+        )
+        @test !any(endswith(key, ".ipynb") for key in keys(basic))
+        @test !any(occursin("colab.research.google.com", text) for text in values(basic))
+    end
+end
+
+@testset "colored Julia and text-only docs badges" begin
+    for template in ("minimum", "simple", "all-in-one")
+        files = PkgFactory.Templates.generate_template_files_dict(
+            "example", "IconPkg.jl", ["Example Author"], "Badge icons", template,
+        )
+        for page in ("README.md", "docs/src/index.md")
+            haskey(files, page) || continue
+            markdown = files[page]
+            encoded = match(r"Julia-1\.12\+-blue\.svg\?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2C([^)&]+)", markdown).captures[1]
+            logo = String(PkgFactory.WebAPI.Base64.base64decode(replace(encoded, "%2B" => "+", "%2F" => "/", "%3D" => "=")))
+            for color in ("rgb(79.6%, 23.5%, 20%)", "rgb(22%, 59.6%, 14.9%)", "rgb(58.4%, 34.5%, 69.8%)")
+                @test occursin(color, logo)
+            end
+            @test !occursin("<rect", logo)
+            @test occursin("Stefan Karpinski", logo)
+            @test !occursin("logo=julia", markdown)
+            @test !occursin("logo=gitbook", markdown)
+            if template != "minimum"
+                for (label, version) in (("Stable", "stable"), ("Dev", "dev"))
+                    @test occursin("[![$label](https://img.shields.io/badge/docs-$version-blue.svg)]", markdown)
+                end
+            end
+        end
+    end
+end
+
+@testset "original Runic badge with formatting workflow" begin
+    files = PkgFactory.Templates.generate_template_files_dict(
+        "example", "FormatPkg.jl", ["Example Author"], "Runic badge", "all-in-one",
+    )
+    @test haskey(files, ".github/workflows/Format.yml")
+    workflow = files[".github/workflows/Format.yml"]
+    @test occursin("fredrikekre/runic-action@v1", workflow)
+    @test occursin("- 'main'", workflow)
+    @test occursin(raw"continue-on-error: ${{ github.event_name == 'pull_request' }}", workflow)
+    for page in ("README.md", "docs/src/index.md")
+        @test occursin("[![code style: runic](https://img.shields.io/badge/code_style-%E1%9A%B1%E1%9A%A2%E1%9A%BE%E1%9B%81%E1%9A%B2-black)](https://github.com/fredrikekre/Runic.jl)", files[page])
+        @test !occursin("Format.yml?branch=", files[page])
+        @test !occursin("[![Runic]", files[page])
+        @test !occursin("-passing-", files[page])
+    end
+    for template in ("simple", "minimum")
+        basic = PkgFactory.Templates.generate_template_files_dict(
+            "example", "FormatPkg.jl", ["Example Author"], "Basic template", template,
+        )
+        @test !occursin("code_style-", basic["README.md"])
+        @test !haskey(basic, ".github/workflows/Format.yml")
+    end
+end
+
+@testset "README and docs badge order" begin
+    expected_by_template = Dict(
+        "minimum" => ["Julia 1.12+", "CI"],
+        "simple" => ["Julia 1.12+", "Stable", "Dev", "CI", "coverage"],
+        "all-in-one" => [
+            "Julia 1.12+", "Colab: open", "Stable", "Dev", "Citation", "license",
+            "code style: runic", "contributer's guide: ColPrac", "CI", "coverage",
+            "Aqua", "JET",
+        ],
+    )
+    for (template, expected) in expected_by_template
+        files = PkgFactory.Templates.generate_template_files_dict(
+            "example", "OrderedPkg.jl", ["Example Author"], "Ordered badges", template,
+        )
+        for page in ("README.md", "docs/src/index.md")
+            haskey(files, page) || continue
+            actual = [m.captures[1] for m in eachmatch(r"(?m)^\[!\[([^\]]+)\]", files[page])]
+            @test actual == expected
+        end
+    end
+end
+
 @testset "local API input normalization" begin
     @test "MyPkg.jl" == PkgFactory.LocalAPI._normalize_repo_name("MyPkg")
     @test "MyPkg.jl" == PkgFactory.LocalAPI._normalize_repo_name("MyPkg.jl")
