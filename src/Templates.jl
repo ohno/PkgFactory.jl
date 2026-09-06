@@ -186,7 +186,7 @@ function update_template(
         dir = "$(@__DIR__)/../",
         user = owner_name,
         authors = author_names,
-        julia = v"1.10",
+        julia = v"1.12",
         plugins = [
             # https://juliaci.github.io/PkgTemplates.jl/stable/user/#Default-Plugins
             PkgTemplates.ProjectFile(; version = v"0.0.1"),
@@ -195,7 +195,7 @@ function update_template(
             PkgTemplates.Readme(),
             PkgTemplates.License(),
             # PkgTemplates.Git(; ignore = ["*/Manifest.toml"]),
-            PkgTemplates.GitHubActions(; extra_versions = ["1.10"]),
+            PkgTemplates.GitHubActions(; extra_versions = ["1.12"]),
             PkgTemplates.TagBot(),
             # PkgTemplates.Secret(),
             PkgTemplates.Dependabot(),

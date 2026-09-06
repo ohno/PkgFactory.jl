@@ -358,6 +358,7 @@ end
     @test occursin("version = {v0.0.1}", all_in_one["CITATION.bib"])
     project_uuid = only(match(r"uuid = \"([^\"]+)\"", all_in_one["Project.toml"]).captures)
     @test occursin("MyPkg = \"$(project_uuid)\"", all_in_one["docs/Project.toml"])
+    @test occursin("MyPkg = \"$(project_uuid)\"", all_in_one["test/Project.toml"])
 
     existing_uuid = "12345678-1234-5678-1234-567812345678"
     simple_with_existing_uuid = PkgFactory.Templates.generate_template_files_dict(
@@ -373,17 +374,25 @@ end
         "MyPkg = \"$(existing_uuid)\"",
         simple_with_existing_uuid["docs/Project.toml"],
     )
+    @test occursin(
+        "MyPkg = \"$(existing_uuid)\"",
+        simple_with_existing_uuid["test/Project.toml"],
+    )
 
     @test !occursin("[extras]", all_in_one["Project.toml"])
     @test !occursin("[targets]", all_in_one["Project.toml"])
     @test !occursin("Aqua =", all_in_one["Project.toml"])
     @test !occursin("JET =", all_in_one["Project.toml"])
     @test !occursin("Test =", all_in_one["Project.toml"])
-    @test occursin("julia = \"1.10\"", all_in_one["Project.toml"])
+    @test occursin("julia = \"1.12\"", all_in_one["Project.toml"])
+    @test occursin("[workspace]", all_in_one["Project.toml"])
+    @test occursin("projects = [\"test\", \"docs\"]", all_in_one["Project.toml"])
     @test occursin("Aqua =", all_in_one["test/Project.toml"])
     @test occursin("JET = \"0.9, 0.10, 0.11, 0.12\"", all_in_one["test/Project.toml"])
     @test occursin("Test =", all_in_one["test/Project.toml"])
     @test occursin("Documenter = \"1\"", all_in_one["docs/Project.toml"])
+    @test occursin("Julia-1.12+-blue.svg", all_in_one["README.md"])
+    @test occursin("Julia-1.12+-blue.svg", all_in_one["docs/src/index.md"])
 
     @test !haskey(all_in_one, ".github/workflows/CompatHelper.yml")
     dependabot = all_in_one[".github/dependabot.yml"]
@@ -395,6 +404,7 @@ end
 
     all_ci = all_in_one[".github/workflows/CI.yml"]
     @test !occursin("version: 'min'", all_ci)
+    @test count(==(true), occursin.("- '1.12'", eachline(IOBuffer(all_ci)))) == 2
     @test count(==(true), occursin.("- 'pre'", eachline(IOBuffer(all_ci)))) == 2
     @test occursin(raw"if: ${{ github.event_name == 'pull_request' }}", all_ci)
     @test occursin(raw"if: ${{ github.event_name != 'pull_request' }}", all_ci)
@@ -425,6 +435,9 @@ end
     @test occursin("Documenter = \"1\"", simple["docs/Project.toml"])
     simple_project_uuid = only(match(r"uuid = \"([^\"]+)\"", simple["Project.toml"]).captures)
     @test occursin("MyPkg = \"$(simple_project_uuid)\"", simple["docs/Project.toml"])
+    @test occursin("MyPkg = \"$(simple_project_uuid)\"", simple["test/Project.toml"])
+    @test occursin("julia = \"1.12\"", simple["Project.toml"])
+    @test occursin("projects = [\"test\", \"docs\"]", simple["Project.toml"])
     @test haskey(simple, "docs/make.jl")
     @test haskey(simple, "docs/src/index.md")
     @test haskey(simple, "docs/src/examples.md")
@@ -443,12 +456,15 @@ end
     @test occursin("actions/workflows/CI.yml/badge.svg", simple["README.md"])
     @test occursin("docs-stable-blue.svg", simple["README.md"])
     @test occursin("codecov.io/gh/ohno/MyPkg.jl", simple["README.md"])
+    @test occursin("Julia-1.12+-blue.svg", simple["README.md"])
+    @test occursin("Julia-1.12+-blue.svg", simple["docs/src/index.md"])
     @test !occursin("github/license", simple["README.md"])
     @test !occursin("github/license", simple["docs/src/index.md"])
     @test occursin("API Reference", simple["README.md"])
 
     simple_ci = simple[".github/workflows/CI.yml"]
     @test !occursin("version: 'min'", simple_ci)
+    @test count(==(true), occursin.("- '1.12'", eachline(IOBuffer(simple_ci)))) == 1
     @test count(==(true), occursin.("- 'pre'", eachline(IOBuffer(simple_ci)))) == 1
     @test !occursin("macOS-latest", simple_ci)
     @test !occursin("windows-latest", simple_ci)
@@ -486,14 +502,18 @@ end
     minimum_ci = minimum[".github/workflows/CI.yml"]
     @test !occursin("version: 'min'", minimum_ci)
     @test !occursin("version: 'pre'", minimum_ci)
-    @test count(==(true), occursin.("version: '1'", eachline(IOBuffer(minimum_ci)))) == 1
+    @test count(==(true), occursin.("version: '1.12'", eachline(IOBuffer(minimum_ci)))) == 1
     @test !occursin("matrix:", minimum_ci)
     @test !occursin("macOS-latest", minimum_ci)
     @test !occursin("windows-latest", minimum_ci)
     @test !occursin("[extras]", minimum["Project.toml"])
     @test !occursin("[targets]", minimum["Project.toml"])
-    @test occursin("julia = \"1.10\"", minimum["Project.toml"])
+    @test occursin("julia = \"1.12\"", minimum["Project.toml"])
+    @test occursin("projects = [\"test\"]", minimum["Project.toml"])
+    minimum_project_uuid = only(match(r"uuid = \"([^\"]+)\"", minimum["Project.toml"]).captures)
+    @test occursin("MyPkg = \"$(minimum_project_uuid)\"", minimum["test/Project.toml"])
     @test occursin("Test =", minimum["test/Project.toml"])
+    @test occursin("Julia-1.12+-blue.svg", minimum["README.md"])
     @test !any(startswith(path, "docs/") for path in keys(minimum))
     @test !haskey(minimum, "CITATION.bib")
     @test !occursin("CITATION", minimum["README.md"])
