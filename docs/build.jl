@@ -20,4 +20,3 @@ makedocs(;
         "API Reference" => "api.md",
     ],
 )
-
