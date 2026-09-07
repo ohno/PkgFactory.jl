@@ -130,7 +130,7 @@ Base.show(io::IO, plan::PackagePlan) = show(io, MIME"text/plain"(), plan)
 
 function _plan_files(config::PackageConfig)::Vector{String}
     template_path = Templates.get_template_path(config.template)
-    return sort([
+    return sort([WebAPI.MARKER_PATH; [
         begin
             path = replace(relpath(file, template_path), "\\" => "/")
             if path == "src/PKG.jl"
@@ -141,7 +141,7 @@ function _plan_files(config::PackageConfig)::Vector{String}
                 path
             end
         end for file in Templates.list_files(template_path)
-    ])
+    ]])
 end
 
 """
@@ -185,7 +185,7 @@ github = PkgFactory.github_device_login()
 """
 function github_device_login(;
     client_id::String = WebAPI.GITHUB_OAUTH_CLIENT_ID,
-    requester = WebAPI.HTTP.request,
+    requester = WebAPI.GitHubTransport(),
     sleeper = sleep,
     output::IO = stdout,
 )
@@ -245,7 +245,7 @@ function create!(
     plan::PackagePlan,
     backend::GitHubAPI;
     codecov_token::AbstractString = "",
-    requester = WebAPI.HTTP.request,
+    requester = WebAPI.GitHubTransport(),
     key_generator = WebAPI._generate_keys,
     package_creator = WebAPI.create_package,
 )

@@ -16,10 +16,16 @@ const $ = (selector) => document.querySelector(selector);
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
-  const response = await fetch(path, { ...options, headers });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
-  return data;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), path === "/api/packages" ? 120000 : 45000);
+  try {
+    const response = await fetch(path, { ...options, headers, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+    return data;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function setStep(active) {
@@ -290,7 +296,27 @@ async function createPackage(event) {
     $("#repository-link").href = result.url;
     setCreationStatus("success");
   } catch (error) {
-    setError(error.message);
+    let message = error.name === "AbortError"
+      ? "The request timed out. GitHub processing may still be running."
+      : error.message;
+    if (state.creationStatus === "creating") {
+      try {
+        const status = await api("/api/github/repository-status", {
+          method: "POST",
+          body: JSON.stringify({ owner: payload.owner, package_name: payload.package_name }),
+        });
+        const guidance = {
+          not_found: "Repository not found with this account. Check GitHub before trying again.",
+          unverified: "An unverified repository exists. Inspect it on GitHub; automatic resume is unavailable.",
+          files_committed: "Template files were committed. Check GitHub, then select Resume with the original settings.",
+          complete: "GitHub records a completed PkgFactory setup. Inspect the repository before taking further action.",
+        };
+        message += ` ${guidance[status.state] || "Check the repository on GitHub."}`;
+      } catch {
+        message += " Status could not be checked. Inspect GitHub before retrying.";
+      }
+    }
+    setError(message);
     $("#form-error").scrollIntoView({ behavior: "smooth", block: "center" });
   } finally {
     if (state.creationStatus !== "checking") $("#codecov-token").value = "";

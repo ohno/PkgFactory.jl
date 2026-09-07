@@ -139,7 +139,7 @@ end
     @test occursin("https://github.com/ohno/MyPackage.jl", preview_text)
     @test occursin("No changes have been made", preview_text)
 
-    @test_throws ErrorException PkgFactory.preview(PkgFactory.PackageConfig(
+    @test_throws PkgFactory.WebAPI.InputError PkgFactory.preview(PkgFactory.PackageConfig(
         owner = "ohno",
         name = "lowercase",
         authors = ["Alice Smith"],
@@ -576,7 +576,7 @@ end
         owner = "example-owner", name = "NotebookPkg.jl",
         authors = ["Example Author"], description = "Notebook tests", template = "all-in-one",
     ))
-    @test plan.files == sort(collect(keys(files)))
+    @test plan.files == sort([collect(keys(files)); PkgFactory.WebAPI.MARKER_PATH])
     @test filter(key -> endswith(key, ".ipynb"), plan.files) == [path]
     notebook = PkgFactory.WebAPI.JSON3.read(files[path], Dict{String,Any})
     @test notebook["nbformat"] == 4
@@ -1352,7 +1352,7 @@ end
     )
     @test available == Dict("available" => true, "repository" => "ohno/MyPackage.jl")
     @test existing == Dict("available" => false, "repository" => "ohno/MyPackage.jl")
-    @test_throws ErrorException PkgFactory.WebAPI.repository_availability(
+    @test_throws PkgFactory.WebAPI.InputError PkgFactory.WebAPI.repository_availability(
         "token",
         "ohno",
         "lowercase";
@@ -1433,8 +1433,21 @@ end
             404, Dict("message" => "Not Found")
         elseif method == "POST" && endswith(url, "/git/refs")
             201, Dict("ref" => "refs/heads/gh-pages")
-        elseif method == "GET" && endswith(url, "/keys?per_page=100")
-            200, [Dict("title" => "Documenter")]
+        elseif method == "GET" && endswith(url, "/keys?per_page=100&page=1")
+            200, Any[]
+        elseif method == "POST" && endswith(url, "/keys")
+            201, Dict("id" => 1)
+        elseif method == "GET" && endswith(url, "/actions/secrets/public-key")
+            200, Dict("key" => PkgFactory.WebAPI.Base64.base64encode(zeros(UInt8, 32)), "key_id" => "key-id")
+        elseif method == "PUT" && endswith(url, "/actions/secrets/DOCUMENTER_KEY")
+            204, Dict()
+        elseif method == "GET" && endswith(url, "/contents/.pkgfactory.json")
+            tree_call = only(filter(call -> endswith(call.url, "/git/trees"), calls))
+            tree = PkgFactory.WebAPI.JSON3.read(tree_call.body, Dict{String,Any})
+            marker = only(filter(entry -> entry["path"] == ".pkgfactory.json", tree["tree"]))["content"]
+            200, Dict("content" => PkgFactory.WebAPI.Base64.base64encode(marker), "sha" => "marker-sha")
+        elseif method == "PUT" && endswith(url, "/contents/.pkgfactory.json")
+            200, Dict()
         else
             error("Unexpected GitHub request: $(method) $(url)")
         end
@@ -1453,7 +1466,7 @@ end
         template == "minimum" ? "unused-codecov-token" : "";
         template_name = template,
         requester = requester,
-        key_generator = () -> error("Existing Documenter key should be reused"),
+        key_generator = () -> ("ssh-rsa test-key", "test-private-key"),
     )
 
     @test result["repository"] == "ohno/MyPackage.jl"
@@ -1475,7 +1488,7 @@ end
             calls,
         ))
         @test occursin("refs/heads/gh-pages", pages_call.body)
-        @test any(call -> endswith(call.url, "/keys?per_page=100"), calls)
+        @test any(call -> endswith(call.url, "/keys?per_page=100&page=1"), calls)
     end
 end
 
@@ -1521,7 +1534,7 @@ end
     @test occursin("Generate package template", String(root.body))
     @test occursin("value=\"MyPkg\"", String(root.body))
     @test occursin("workflow, profile", String(root.body))
-    @test occursin("contains only its initial README", String(root.body))
+    @test occursin("PkgFactory recovery marker", String(root.body))
     @test occursin("default-src", PkgFactory.WebUI.HTTP.header(
         root,
         "Content-Security-Policy",
@@ -1561,7 +1574,7 @@ end
     unauthorized = PkgFactory.WebUI.handle_request(
         PkgFactory.WebUI.HTTP.Request("GET", "/api/github/owners"),
     )
-    @test unauthorized.status == 400
+    @test unauthorized.status == 401
     @test occursin("authentication is required", String(unauthorized.body))
 
     availability_requester = function (method, url; headers, body, status_exception)
@@ -1576,7 +1589,7 @@ end
         PkgFactory.WebUI.HTTP.Request(
             "POST",
             "/api/github/repository-availability",
-            ["Authorization" => "Bearer token"],
+            ["Authorization" => "Bearer token", "Content-Type" => "application/json"],
             PkgFactory.WebAPI.JSON3.write(
                 Dict("owner" => "ohno", "package_name" => "MyPackage"),
             ),
@@ -1591,3 +1604,5 @@ end
     @test availability_body["available"]
     @test availability_body["repository"] == "ohno/MyPackage.jl"
 end
+
+include("web_hardening.jl")
