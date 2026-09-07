@@ -5,3 +5,6 @@
 LocalPreferences.toml
 .DS_Store
 /docs/build/
+
+# Jupyter Notebook
+.ipynb_checkpoints/

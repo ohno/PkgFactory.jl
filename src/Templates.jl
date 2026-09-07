@@ -147,6 +147,8 @@ function generate_template_files_dict(
         key = replace(key, "\\" => "/")
         if key == "src/PKG.jl"
             key = "src/$(ctx["PKG"]).jl"
+        elseif key == "examples/PKG.ipynb"
+            key = "examples/$(ctx["PKG"]).ipynb"
         end
         # content
         text = read_file(path_file)

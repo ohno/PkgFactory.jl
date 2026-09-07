@@ -571,7 +571,13 @@ end
     files = PkgFactory.Templates.generate_template_files_dict(
         "example-owner", "NotebookPkg.jl", ["Example Author"], "Notebook tests", "all-in-one",
     )
-    path = "examples/quickstart.ipynb"
+    path = "examples/NotebookPkg.ipynb"
+    plan = PkgFactory.preview(PkgFactory.PackageConfig(
+        owner = "example-owner", name = "NotebookPkg.jl",
+        authors = ["Example Author"], description = "Notebook tests", template = "all-in-one",
+    ))
+    @test plan.files == sort(collect(keys(files)))
+    @test filter(key -> endswith(key, ".ipynb"), plan.files) == [path]
     notebook = PkgFactory.WebAPI.JSON3.read(files[path], Dict{String,Any})
     @test notebook["nbformat"] == 4
     @test notebook["nbformat_minor"] == 5
@@ -593,7 +599,7 @@ end
     end
     @test occursin("VERSION >= v\"1.12\"", join(code_cells[1]["source"]))
     setup = join(code_cells[2]["source"])
-    @test occursin("Pkg.activate(mktempdir())", setup)
+    @test occursin("import Pkg\nPkg.activate(\".\")\n", setup)
     @test occursin("Pkg.add(url=\"https://github.com/example-owner/NotebookPkg.jl.git\", rev=\"main\")", setup)
     @test occursin("import NotebookPkg", join(code_cells[3]["source"]))
     @test occursin("NotebookPkg.hello()", join(code_cells[4]["source"]))

@@ -133,7 +133,13 @@ function _plan_files(config::PackageConfig)::Vector{String}
     return sort([
         begin
             path = replace(relpath(file, template_path), "\\" => "/")
-            path == "src/PKG.jl" ? "src/$(config.name).jl" : path
+            if path == "src/PKG.jl"
+                "src/$(config.name).jl"
+            elseif path == "examples/PKG.ipynb"
+                "examples/$(config.name).ipynb"
+            else
+                path
+            end
         end for file in Templates.list_files(template_path)
     ])
 end
