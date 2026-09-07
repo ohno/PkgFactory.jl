@@ -108,16 +108,21 @@ button, select { cursor: pointer; }
 .security-notes span::before { content: "✓"; margin-right: 6px; color: var(--success); }
 
 .workflow, .package-flow { display: grid; gap: 22px; }
+#package-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
 .workflow-card { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; backdrop-filter: blur(8px); }
 .workflow-card.is-active { border-color: color-mix(in srgb, var(--primary) 36%, var(--border)); box-shadow: 0 0 0 3px rgba(79, 70, 229, .06), var(--shadow); }
 .card-heading { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; padding: 23px 25px; border-bottom: 1px solid var(--border); }
 .step-badge { display: grid; width: 31px; height: 31px; place-items: center; color: var(--muted); border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface-muted); font-size: 12px; font-weight: 800; }
 .is-active .step-badge { color: white; border-color: var(--primary); background: var(--primary); }
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.card-heading h2, .status-card h2 { margin: 0; color: var(--text-strong); font-size: 17px; font-weight: 750; letter-spacing: -.02em; }
+.card-heading h2 { margin: 0; color: var(--text-strong); font-size: 17px; font-weight: 750; letter-spacing: -.02em; }
 .card-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 .step-state, .configured-pill { flex: 0 0 auto; padding: 3px 8px; color: #4338ca; border-radius: 999px; background: var(--primary-soft); font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .step-state.is-optional { color: var(--muted); background: var(--surface-muted); }
+.workflow-card.is-complete { border-color: var(--success); }
+#connect-panel.is-complete .card-heading { border-bottom: 0; }
+.workflow-card.is-complete .step-badge { color: white; border-color: var(--success); background: var(--success); }
+.workflow-card.is-complete .step-state { color: #047857; background: #d1fae5; }
 .card-body { padding: 24px 25px; }
 
 .info-panel { display: flex; gap: 11px; align-items: flex-start; margin-bottom: 20px; padding: 12px 14px; color: #3730a3; border: 1px solid #c7d2fe; border-radius: 9px; background: var(--primary-soft); font-size: 11px; }
@@ -170,6 +175,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .automation-copy strong, .check-field strong { color: var(--text); font-size: 11px; }
 .automation-copy code, .card-heading code { font-size: .92em; }
 .configured-pill { color: #047857; background: #d1fae5; }
+.is-disabled .configured-pill { color: var(--muted); background: var(--border); }
+.is-disabled .automation-copy strong, .field.is-disabled > span { color: var(--muted); }
+input:disabled { color: var(--muted); border-color: var(--border); background: var(--surface-muted); cursor: not-allowed; }
 .check-field { display: flex; gap: 10px; align-items: flex-start; padding-top: 4px; color: var(--text); }
 .check-field input { flex: 0 0 auto; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--primary); }
 .check-field > span { display: grid; gap: 2px; }
@@ -180,10 +188,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .notice-error { color: var(--danger); border: 1px solid #fecaca; background: var(--danger-soft); }
 #connect-error { margin-top: 16px; margin-bottom: 0; }
 
-.status-card { display: flex; min-height: 340px; padding: 52px 28px; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-.status-card > p:not(.eyebrow) { max-width: 480px; margin: 9px 0 0; color: var(--muted); font-size: 12px; }
-.spinner { width: 42px; height: 42px; margin-bottom: 21px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; }
-.success-mark { display: grid; width: 46px; height: 46px; margin-bottom: 20px; place-items: center; color: white; border-radius: 50%; background: var(--success); font-size: 21px; font-weight: 800; }
+.creation-status { display: flex; align-items: center; gap: 10px; margin-top: 16px; color: var(--muted); font-size: 12px; }
+.creation-status p { margin: 0; }
+.spinner { flex: 0 0 auto; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; }
+.creation-result { width: 100%; }
+.creation-result h3 { margin: 0; color: var(--text-strong); font-size: 17px; }
+.creation-result p { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
 .success-actions { display: flex; gap: 10px; margin-top: 22px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -212,6 +222,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   .step-state { color: #c7d2fe; }
   .info-panel { color: #c7d2fe; border-color: #373b75; }
   .configured-pill { color: #6ee7b7; background: #123d32; }
+  .workflow-card.is-complete .step-state { color: #6ee7b7; background: #123d32; }
   input::placeholder, textarea::placeholder { color: #6b7280; }
   .notice-error { border-color: #7f1d1d; }
 }
@@ -232,6 +243,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   .card-body { padding: 20px 17px; }
   .title-row { align-items: flex-start; }
   .title-row .step-state { display: none; }
+  .workflow-card.is-complete .step-state { display: inline-block; }
   .two-columns { grid-template-columns: 1fr; }
   .full-width { grid-column: auto; }
   .device-card { grid-template-columns: 1fr auto; }

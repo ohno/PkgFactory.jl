@@ -47,13 +47,13 @@
           <div>
             <div class="title-row">
               <h2>Connect GitHub</h2>
-              <span class="step-state">Current step</span>
+              <span id="connect-state" class="step-state">Current step</span>
             </div>
-            <p>Authorize PkgFactory for this browser session using GitHub's one-time device flow.</p>
+            <p id="connect-description" role="status">Authorize PkgFactory for this browser session using GitHub's one-time device flow.</p>
           </div>
         </div>
 
-        <div class="card-body">
+        <div id="connect-actions" class="card-body">
           <div class="info-panel">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-4 12.7V18a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-3.3A7 7 0 0 0 12 2Zm2 11.6-.8.5V18h-2.4v-3.9l-.8-.5a4.5 4.5 0 1 1 4 0Z"/></svg>
             <p>Your access token is held only in memory and is discarded when this tab closes.</p>
@@ -72,13 +72,14 @@
               <strong id="device-code">—</strong>
             </div>
             <button id="copy-code" class="button button-secondary button-small" type="button">Copy code</button>
-            <a id="verification-link" class="button button-primary" href="https://github.com/login/device" target="_blank" rel="noreferrer">Copy &amp; authorize</a>
+            <a id="verification-link" class="button button-primary" href="https://github.com/login/device" target="_blank" rel="noreferrer">Copy &amp; Authorize</a>
             <p id="device-status" class="device-status" role="status">Waiting for authorization…</p>
           </div>
         </div>
       </section>
 
       <form id="package-form" class="package-flow" hidden>
+        <fieldset id="package-fields" class="package-flow" aria-label="Package settings">
         <section class="workflow-card is-active" data-step="2">
           <div class="card-heading">
             <span class="step-badge">2</span>
@@ -144,20 +145,21 @@
             <span class="step-badge">4</span>
             <div>
               <div class="title-row"><h2>Configure automation</h2><span class="step-state is-optional">Optional</span></div>
-              <p>Documenter keys are generated automatically. Add coverage or resume a previous setup here.</p>
+              <p id="automation-description" aria-live="polite">Documenter keys are generated automatically. Add coverage or resume a previous setup here.</p>
             </div>
           </div>
           <div class="card-body">
-            <div class="automation-row">
+            <div id="documenter-row" class="automation-row">
               <div class="automation-copy">
                 <strong>Documenter deployment</strong>
-                <small>Deploy key and <code>DOCUMENTER_KEY</code> repository secret</small>
+                <small id="documenter-description">Deploy key and <code>DOCUMENTER_KEY</code> repository secret</small>
               </div>
-              <span class="configured-pill">Automatic</span>
+              <span id="documenter-state" class="configured-pill">Automatic</span>
             </div>
-            <label class="field">
+            <label id="codecov-field" class="field">
               <span>Codecov upload token</span>
-              <input id="codecov-token" name="codecov_token" type="password" autocomplete="off" placeholder="Leave blank to skip CODECOV_TOKEN">
+              <input id="codecov-token" name="codecov_token" type="password" autocomplete="off" placeholder="Leave blank to skip CODECOV_TOKEN" aria-describedby="codecov-description">
+              <small id="codecov-description">Optional: leave blank to skip configuring Codecov.</small>
             </label>
             <label class="check-field">
               <input id="resume" name="resume" type="checkbox">
@@ -166,38 +168,37 @@
           </div>
         </section>
 
+        </fieldset>
+
         <section class="workflow-card create-card" data-step="5">
           <div class="card-heading">
             <span class="step-badge">5</span>
             <div>
-              <div class="title-row"><h2>Create and configure</h2><span class="step-state">Final step</span></div>
-              <p>PkgFactory will create the repository, commit the template, add <code>gh-pages</code>, and configure secrets.</p>
+              <div class="title-row"><h2>Create and configure</h2><span id="create-state" class="step-state">Final step</span></div>
+              <p id="create-description">PkgFactory will create the repository, commit the template, add <code>gh-pages</code>, and configure secrets.</p>
             </div>
           </div>
           <div class="card-body create-actions">
             <div id="form-error" class="notice notice-error" role="alert" hidden></div>
             <button id="create-button" class="button button-primary" type="submit">Generate &amp; commit package</button>
+            <div id="creating-panel" class="creation-status" role="status" hidden>
+              <span class="spinner" aria-hidden="true"></span>
+              <p id="creation-message">Building your package…</p>
+            </div>
+            <div id="success-panel" class="creation-result" hidden>
+              <div role="status">
+                <h3>Your package is ready.</h3>
+                <p id="success-copy"></p>
+              </div>
+              <div class="success-actions">
+                <a id="repository-link" class="button button-success" href="#" target="_blank" rel="noreferrer">Go to repository</a>
+                <button id="create-another" class="button button-secondary" type="button">Create another package</button>
+              </div>
+            </div>
           </div>
         </section>
       </form>
 
-      <section id="creating-panel" class="workflow-card status-card" data-step="5" hidden>
-        <div class="spinner" aria-hidden="true"></div>
-        <p class="eyebrow">CREATING REPOSITORY</p>
-        <h2>Building your package…</h2>
-        <p>GitHub is preparing branches, encrypted secrets, and the initial commit.</p>
-      </section>
-
-      <section id="success-panel" class="workflow-card status-card success-card" data-step="6" hidden>
-        <div class="success-mark" aria-hidden="true">✓</div>
-        <p class="eyebrow">COMPLETED</p>
-        <h2>Your package is ready.</h2>
-        <p id="success-copy"></p>
-        <div class="success-actions">
-          <a id="repository-link" class="button button-success" href="#" target="_blank" rel="noreferrer">Go to repository</a>
-          <button id="create-another" class="button button-secondary" type="button">Create another package</button>
-        </div>
-      </section>
     </div>
   </main>
 

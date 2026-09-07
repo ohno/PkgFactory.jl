@@ -632,21 +632,23 @@ function create_package(
         commit_sha;
         requester = requester,
     )
-    _ensure_gh_pages(
-        access_token,
-        owner_name,
-        repo_name,
-        commit_sha;
-        requester = requester,
-    )
-    _ensure_documenter_key(
-        access_token,
-        owner_name,
-        repo_name;
-        requester = requester,
-        key_generator = key_generator,
-    )
-    if !isempty(strip(codecov_token))
+    if template_name != "minimum"
+        _ensure_gh_pages(
+            access_token,
+            owner_name,
+            repo_name,
+            commit_sha;
+            requester = requester,
+        )
+        _ensure_documenter_key(
+            access_token,
+            owner_name,
+            repo_name;
+            requester = requester,
+            key_generator = key_generator,
+        )
+    end
+    if template_name != "minimum" && !isempty(strip(codecov_token))
         _set_repository_secret(
             access_token,
             owner_name,

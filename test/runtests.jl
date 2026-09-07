@@ -1407,7 +1407,7 @@ end
     @test occursin("GET /repos/ohno/MyPackage.jl/git/ref/heads/missing", error.message)
 end
 
-@testset "create package through GitHub API" begin
+@testset "create package through GitHub API ($template)" for template in ("all-in-one", "simple", "minimum")
     calls = NamedTuple[]
     requester = function (method, url; headers, body, status_exception)
         push!(calls, (; method, url, body))
@@ -1449,8 +1449,9 @@ end
         "ohno",
         "MyPackage",
         ["Alice Smith"],
-        "A package created in the browser";
-        template_name = "minimum",
+        "A package created in the browser",
+        template == "minimum" ? "unused-codecov-token" : "";
+        template_name = template,
         requester = requester,
         key_generator = () -> error("Existing Documenter key should be reused"),
     )
@@ -1463,11 +1464,19 @@ end
     tree_body = PkgFactory.WebAPI.JSON3.read(tree_call.body, Dict{String,Any})
     @test tree_body["base_tree"] == "base-tree"
     @test any(entry -> entry["path"] == "Project.toml", tree_body["tree"])
-    pages_call = only(filter(
-        call -> call.method == "POST" && endswith(call.url, "/git/refs"),
-        calls,
-    ))
-    @test occursin("refs/heads/gh-pages", pages_call.body)
+    if template == "minimum"
+        @test !any(call -> occursin("gh-pages", call.url) ||
+                          endswith(call.url, "/git/refs") ||
+                          occursin("/keys", call.url) ||
+                          occursin("/actions/secrets", call.url), calls)
+    else
+        pages_call = only(filter(
+            call -> call.method == "POST" && endswith(call.url, "/git/refs"),
+            calls,
+        ))
+        @test occursin("refs/heads/gh-pages", pages_call.body)
+        @test any(call -> endswith(call.url, "/keys?per_page=100"), calls)
+    end
 end
 
 @testset "web repository secret encryption" begin
