@@ -1542,6 +1542,13 @@ end
     @test occursin("checkPackageAvailability", String(javascript.body))
     @test occursin("package-availability", String(root.body))
 
+    logo = PkgFactory.WebUI.handle_request(
+        PkgFactory.WebUI.HTTP.Request("GET", "/assets/logo.svg"),
+    )
+    @test logo.status == 200
+    @test PkgFactory.WebUI.HTTP.header(logo, "Content-Type") == "image/svg+xml; charset=utf-8"
+    @test String(logo.body) == read(joinpath(@__DIR__, "..", "docs", "src", "assets", "logo.svg"), String)
+
     config = PkgFactory.WebUI.handle_request(
         PkgFactory.WebUI.HTTP.Request("GET", "/api/config");
         client_id = "test-client",

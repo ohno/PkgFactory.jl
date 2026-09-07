@@ -70,25 +70,13 @@ button, select { cursor: pointer; }
   text-decoration: none;
 }
 
-.julia-mark {
-  position: relative;
+.brand-logo {
   display: block;
-  width: 31px;
-  height: 23px;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 48px;
+  object-fit: contain;
 }
-
-.julia-mark i {
-  position: absolute;
-  bottom: 0;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #cb3c33;
-}
-
-.julia-mark i:first-child { left: 0; }
-.julia-mark i:nth-child(2) { left: 10px; background: #389826; }
-.julia-mark i:nth-child(3) { left: 20px; background: #9558b2; }
 
 .header-actions, .account, .github-link { display: flex; align-items: center; }
 .header-actions { gap: 14px; }

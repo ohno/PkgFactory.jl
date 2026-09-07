@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1"
+     width="325pt" height="300pt" viewBox="0 0 325 300"
+     role="img" aria-labelledby="title desc">
+  <title id="title">PkgFactory.jl</title>
+  <desc id="desc">An abstract factory with three green, red, and purple triangular roofs above a blue base with three transparent square windows.</desc>
+  <polygon points="37.5,158 113.5,70 113.5,158" fill="#389826"/>
+  <polygon points="124.5,158 200.5,70 200.5,158" fill="#CB3C33"/>
+  <polygon points="211.5,158 287.5,70 287.5,158" fill="#9558B2"/>
+  <path d="M 37.5 169 h 250 v 61 h -250 Z M 66.5 190.5 v 18 h 18 v -18 Z M 153.5 190.5 v 18 h 18 v -18 Z M 240.5 190.5 v 18 h 18 v -18 Z" fill="#4063D8" fill-rule="evenodd"/>
+</svg>

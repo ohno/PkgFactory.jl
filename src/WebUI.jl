@@ -9,6 +9,7 @@ import ..Templates
 import ..WebAPI
 
 const WEB_ROOT = normpath(joinpath(@__DIR__, "web"))
+const LOGO_PATH = normpath(joinpath(@__DIR__, "..", "docs", "src", "assets", "logo.svg"))
 
 hello() = "Hello, WebUI.jl!"
 
@@ -94,6 +95,12 @@ function handle_request(
                 200,
                 _asset("style.css");
                 content_type = "text/css; charset=utf-8",
+            )
+        elseif method == "GET" && path == "/assets/logo.svg"
+            return _response(
+                200,
+                read(LOGO_PATH, String);
+                content_type = "image/svg+xml; charset=utf-8",
             )
         elseif method == "GET" && path == "/api/health"
             return _json_response(200, Dict("status" => "ok"))

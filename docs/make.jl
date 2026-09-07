@@ -11,7 +11,7 @@ makedocs(;
     format=Documenter.HTML(;
         canonical="https://ohno.github.io/PkgFactory.jl",
         edit_link="main",
-        assets=String[],
+        assets=["assets/logo.ico"],
     ),
     pages=[
         "Home" => "index.md",
