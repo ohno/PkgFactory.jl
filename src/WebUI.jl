@@ -4,6 +4,7 @@ module WebUI
 import DocStringExtensions
 import HTTP
 import JSON3
+import Sockets
 
 import ..Templates
 import ..WebAPI
@@ -29,6 +30,7 @@ function _response(
         "Cache-Control" => "no-store",
         "X-Content-Type-Options" => "nosniff",
         "Referrer-Policy" => "no-referrer",
+        "X-Frame-Options" => "DENY",
     ]
     return HTTP.Response(status, headers, body)
 end
@@ -41,22 +43,25 @@ function _json_body(request::HTTP.Request)::Dict{String,Any}
     try
         return JSON3.read(String(request.body), Dict{String,Any})
     catch
-        error("The request body must be valid JSON.")
+        throw(WebAPI.InputError("The request body must be a JSON object."))
     end
 end
 
 function _access_token(request::HTTP.Request)::String
     authorization = HTTP.header(request, "Authorization", "")
-    startswith(authorization, "Bearer ") || error("GitHub authentication is required.")
+    startswith(authorization, "Bearer ") || throw(RequestError(401, "GitHub authentication is required."))
     token = strip(authorization[8:end])
-    isempty(token) && error("GitHub authentication is required.")
-    return token
+    isempty(token) && throw(RequestError(401, "GitHub authentication is required."))
+    ncodeunits(token) <= 4096 || throw(RequestError(401, "Invalid authentication."))
+    return String(token)
 end
 
 function _route(request::HTTP.Request)::Tuple{String,String}
     target = split(String(request.target), '?'; limit = 2)[1]
     return String(request.method), target
 end
+
+include("WebPolicy.jl")
 
 """
 $(DocStringExtensions.TYPEDSIGNATURES)
@@ -67,11 +72,14 @@ injectable so the complete workflow can be tested without network access.
 function handle_request(
     request::HTTP.Request;
     client_id::String = WebAPI.GITHUB_OAUTH_CLIENT_ID,
-    requester = HTTP.request,
+    requester = WebAPI.GitHubTransport(),
     key_generator = WebAPI._generate_keys,
+    policy = DEFAULT_POLICY,
+    client_ip = "local",
 )
     method, path = _route(request)
     try
+        _guard_request(request, policy, client_ip)
         if method == "GET" && path == "/"
             response = _response(
                 200,
@@ -81,7 +89,7 @@ function handle_request(
             push!(
                 response.headers,
                 "Content-Security-Policy" =>
-                    "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'self'",
+                    "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
             )
             return response
         elseif method == "GET" && path in ("/app.js", "/assets/app.js")
@@ -113,11 +121,13 @@ function handle_request(
                 ),
             )
         elseif method == "POST" && path == "/api/oauth/device"
+            _fields(_json_body(request), String[])
             result = WebAPI.device_flow_begin(client_id; requester = requester)
             return _json_response(200, result)
         elseif method == "POST" && path == "/api/oauth/token"
             body = _json_body(request)
-            device_code = String(get(body, "device_code", ""))
+            _fields(body, ["device_code"], ["device_code"])
+            device_code = WebAPI._bounded_text(body["device_code"], "device_code", 1024)
             result = WebAPI.device_flow_poll(
                 device_code,
                 client_id;
@@ -130,10 +140,14 @@ function handle_request(
                 requester = requester,
             )
             return _json_response(200, Dict("owners" => owners))
-        elseif method == "POST" && path == "/api/github/repository-availability"
+        elseif method == "POST" && path in ("/api/github/repository-availability", "/api/github/repository-status")
             access_token = _access_token(request)
             body = _json_body(request)
-            result = WebAPI.repository_availability(
+            _fields(body, ["owner", "package_name"], ["owner", "package_name"])
+            WebAPI._bounded_text(body["owner"], "owner", 100)
+            WebAPI._bounded_text(body["package_name"], "package_name", 100)
+            lookup = endswith(path, "repository-status") ? WebAPI.repository_status : WebAPI.repository_availability
+            result = lookup(
                 access_token,
                 String(get(body, "owner", "")),
                 String(get(body, "package_name", ""));
@@ -142,8 +156,8 @@ function handle_request(
             return _json_response(200, result)
         elseif method == "POST" && path == "/api/packages"
             access_token = _access_token(request)
-            body = _json_body(request)
-            authors = String.(get(body, "authors", Any[]))
+            body = _package_body(request)
+            authors = String.(body["authors"])
             result = WebAPI.create_package(
                 access_token,
                 String(get(body, "owner", "")),
@@ -164,8 +178,7 @@ function handle_request(
         end
         return _json_response(404, Dict("error" => "Not found."))
     catch error
-        status = error isa WebAPI.GitHubAPIError ? error.status : 400
-        return _json_response(status, Dict("error" => sprint(showerror, error)))
+        return _error_response(error)
     end
 end
 
@@ -183,13 +196,23 @@ function start(
     host::AbstractString = get(ENV, "HOST", "127.0.0.1"),
     port::Integer = parse(Int, get(ENV, "PORT", "8000"));
     verbose::Bool = false,
+    public_origin::AbstractString = get(ENV, "PUBLIC_ORIGIN", "http://$(host):$(port)"),
+    max_body_bytes::Integer = 65536,
+    trusted_proxies = String[],
+    client_id::String = get(ENV, "GITHUB_OAUTH_CLIENT_ID", WebAPI.GITHUB_OAUTH_CLIENT_ID),
+    requester = WebAPI.GitHubTransport(),
 )
     @info "PkgFactory Web UI is available at http://$(host):$(port)/"
+    policy = WebPolicy(; public_origin, max_body_bytes)
+    handler = (request; kwargs...) -> handle_request(request; client_id, requester, kwargs...)
     return HTTP.serve!(
-        request -> handle_request(request),
+        stream -> _serve_stream(stream, policy, handler, trusted_proxies),
         String(host),
         Int(port);
         verbose = verbose,
+        stream = true,
+        readtimeout = 60,
+        max_connections = 128,
     )
 end
 

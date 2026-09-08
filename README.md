@@ -30,6 +30,9 @@ memory. The flow requests `repo`, `workflow`, `read:user`, and `read:org` so it
 can generate package files and GitHub Actions workflows. The terminal workflow
 remains available as `PkgFactory.LocalUI.CLI()`.
 
+For HTTPS deployment, rate limits, and recovery requirements, see the
+[Web UI hosting guide](docs/src/hosting.md).
+
 ## Jupyter Notebook
 
 Notebook workflows separate configuration, preview, authentication, and the

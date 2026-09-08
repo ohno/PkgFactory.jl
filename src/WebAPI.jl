@@ -12,6 +12,9 @@ import GitHub
 import HTTP
 import JSON3
 import Sodium
+import SHA
+import URIs
+import UUIDs
 
 import ..Templates
 import ..Verifications
@@ -24,11 +27,15 @@ const GITHUB_OAUTH_CLIENT_ID = "Ov23libqpCkC6Z5pSlFG"
 struct GitHubAPIError <: Exception
     status::Int
     message::String
+    retry_after::Union{Nothing,Int}
 end
+GitHubAPIError(status::Int, message::String) = GitHubAPIError(status, message, nothing)
 
 Base.showerror(io::IO, error::GitHubAPIError) = print(io, error.message)
 
 hello() = "Hello, WebAPI.jl!"
+
+include("WebSafety.jl")
 
 function _response_json(response)
     isempty(response.body) && return Dict{String,Any}()
@@ -56,7 +63,7 @@ function _request_json(
     token::AbstractString = "",
     body = nothing,
     expected::Tuple = (200,),
-    requester = HTTP.request,
+    requester = GitHubTransport(),
 )
     headers = Pair{String,String}[
         "Accept" => "application/vnd.github+json",
@@ -77,7 +84,8 @@ function _request_json(
             body = payload,
             status_exception = false,
         )
-    catch
+    catch err
+        err isa InterruptException && rethrow()
         throw(
             GitHubAPIError(
                 503,
@@ -89,6 +97,7 @@ function _request_json(
         GitHubAPIError(
             response.status,
             "$(_github_message(response)) ($(method) $(replace(url, GITHUB_API_URL => "")))",
+            tryparse(Int, HTTP.header(response, "Retry-After", "")),
         ),
     )
     return _response_json(response), response.status
@@ -102,7 +111,7 @@ the browser while the access token is polled separately.
 """
 function device_flow_begin(
     client_id::String = GITHUB_OAUTH_CLIENT_ID;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
 )
     response = try
         requester(
@@ -113,10 +122,11 @@ function device_flow_begin(
                 "Content-Type" => "application/x-www-form-urlencoded",
                 "User-Agent" => "PkgFactory.jl",
             ],
-            body = "client_id=$(client_id)&scope=read:user%20read:org%20repo%20workflow",
+            body = "client_id=$(URIs.escapeuri(client_id))&scope=read:user%20read:org%20repo%20workflow",
             status_exception = false,
         )
-    catch
+    catch err
+        err isa InterruptException && rethrow()
         throw(
             GitHubAPIError(
                 503,
@@ -137,9 +147,9 @@ and slow-down responses are returned unchanged so the browser can keep polling.
 function device_flow_poll(
     device_code::String,
     client_id::String = GITHUB_OAUTH_CLIENT_ID;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
 )
-    isempty(strip(device_code)) && error("The device code must not be empty.")
+    _bounded_text(device_code, "device_code", 1024)
     response = try
         requester(
             "POST",
@@ -149,10 +159,11 @@ function device_flow_poll(
                 "Content-Type" => "application/x-www-form-urlencoded",
                 "User-Agent" => "PkgFactory.jl",
             ],
-            body = "client_id=$(client_id)&device_code=$(device_code)&grant_type=urn:ietf:params:oauth:grant-type:device_code",
+            body = "client_id=$(URIs.escapeuri(client_id))&device_code=$(URIs.escapeuri(device_code))&grant_type=urn:ietf:params:oauth:grant-type:device_code",
             status_exception = false,
         )
-    catch
+    catch err
+        err isa InterruptException && rethrow()
         throw(
             GitHubAPIError(
                 503,
@@ -170,7 +181,7 @@ $(DocStringExtensions.TYPEDSIGNATURES)
 Return the authenticated user and organizations visible to the OAuth token.
 If organization membership is unavailable, the personal account remains usable.
 """
-function get_repository_owners(access_token::AbstractString; requester = HTTP.request)
+function get_repository_owners(access_token::AbstractString; requester = GitHubTransport())
     viewer, _ = _request_json(
         "GET",
         "$(GITHUB_API_URL)/user";
@@ -225,21 +236,20 @@ function _verify_inputs(
     visibility::String,
     template_name::String,
 )
-    owner_check = Verifications.verify_owner_name(owner_name)
-    owner_check == "OK" || error("Owner name is not valid: $(owner_check)")
+    _validate_owner(owner_name)
+    _bounded_text(repo_name, "package_name", 100)
     package_check = Verifications.verify_package_name(_package_name(repo_name))
-    package_check == "OK" || error("Package name is not valid: $(package_check)")
-    isempty(author_names) && error("Author names must not be empty.")
-    any(isempty(strip(author)) for author in author_names) &&
-        error("Author names must not contain an empty name.")
+    package_check == "OK" || throw(InputError("Invalid package name."))
+    1 <= length(author_names) <= 20 || throw(InputError("authors must contain 1 to 20 names."))
+    foreach(author -> _bounded_text(author, "author", 200), author_names)
     visibility in ("public", "private") ||
-        error("Visibility must be either \"public\" or \"private\".")
+        throw(InputError("Visibility must be public or private."))
     template_name in Templates.list_templates() ||
-        error("Unknown package template: $(template_name)")
+        throw(InputError("Unknown package template."))
     return _normalize_repo_name(repo_name)
 end
 
-function _repository(access_token, owner_name, repo_name; requester = HTTP.request)
+function _repository(access_token, owner_name, repo_name; requester = GitHubTransport())
     return _request_json(
         "GET",
         "$(GITHUB_API_URL)/repos/$(owner_name)/$(repo_name)";
@@ -262,13 +272,13 @@ function repository_availability(
     access_token::String,
     owner_name::String,
     repo_name::String;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
 )
-    owner_check = Verifications.verify_owner_name(owner_name)
-    owner_check == "OK" || error("Owner name is not valid: $(owner_check)")
+    _validate_owner(owner_name)
+    _bounded_text(repo_name, "package_name", 100)
     package_name = _package_name(repo_name)
     package_check = Verifications.verify_package_name(package_name)
-    package_check == "OK" || error("Package name is not valid: $(package_check)")
+    package_check == "OK" || throw(InputError("Invalid package name."))
     normalized_repo_name = _normalize_repo_name(repo_name)
     _, status = _repository(
         access_token,
@@ -289,7 +299,7 @@ function _create_repository(
     description,
     visibility,
     viewer_login;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
 )
     endpoint =
         owner_name == viewer_login ? "$(GITHUB_API_URL)/user/repos" :
@@ -311,7 +321,7 @@ function _create_repository(
     return response
 end
 
-function _project_file(access_token, owner_name, repo_name; requester = HTTP.request)
+function _project_file(access_token, owner_name, repo_name; requester = GitHubTransport())
     response, status = _request_json(
         "GET",
         "$(GITHUB_API_URL)/repos/$(owner_name)/$(repo_name)/contents/Project.toml";
@@ -329,7 +339,7 @@ function _branch_head(
     owner_name,
     repo_name,
     branch;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
     attempts::Int = 6,
     sleeper = sleep,
 )
@@ -360,7 +370,7 @@ function _commit_template(
     branch,
     paths_and_contents,
     commit_message;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
 )
     parent_sha = _branch_head(
         access_token,
@@ -419,17 +429,23 @@ function _ensure_main_branch(
     repo_name,
     current_branch,
     commit_sha;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
 )
     current_branch == "main" && return
-    _request_json(
-        "POST",
-        "$(GITHUB_API_URL)/repos/$(owner_name)/$(repo_name)/git/refs";
-        token = access_token,
-        body = Dict("ref" => "refs/heads/main", "sha" => commit_sha),
-        expected = (201,),
-        requester = requester,
-    )
+    existing, status = _request_json("GET", "$GITHUB_API_URL/repos/$owner_name/$repo_name/git/ref/heads/main";
+        token=access_token, expected=(200, 404), requester)
+    if status == 200
+        existing["object"]["sha"] == commit_sha || throw(InputError("Existing main branch has a different commit."))
+    else
+        _request_json(
+            "POST",
+            "$(GITHUB_API_URL)/repos/$(owner_name)/$(repo_name)/git/refs";
+            token = access_token,
+            body = Dict("ref" => "refs/heads/main", "sha" => commit_sha),
+            expected = (201,),
+            requester = requester,
+        )
+    end
     _request_json(
         "PATCH",
         "$(GITHUB_API_URL)/repos/$(owner_name)/$(repo_name)";
@@ -439,7 +455,7 @@ function _ensure_main_branch(
     )
 end
 
-function _ensure_gh_pages(access_token, owner_name, repo_name, commit_sha; requester = HTTP.request)
+function _ensure_gh_pages(access_token, owner_name, repo_name, commit_sha; requester = GitHubTransport())
     _, status = _request_json(
         "GET",
         "$(GITHUB_API_URL)/repos/$(owner_name)/$(repo_name)/git/ref/heads/gh-pages";
@@ -464,7 +480,7 @@ function _set_repository_secret(
     repo_name,
     secret_name,
     secret_value;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
 )
     public_key, _ = _request_json(
         "GET",
@@ -488,9 +504,11 @@ end
 
 function _generate_keys()
     return mktempdir() do directory
-        cd(directory) do
-            GitHub.genkeys()
-        end
+        filename = joinpath(directory, "documenter")
+        # No process-global cd and no shared relative filenames.
+        run(pipeline(`ssh-keygen -q -t rsa -b 4096 -N "" -C Documenter -f $filename`;
+            stdout=devnull, stderr=devnull))
+        (chomp(read(filename * ".pub", String)), Base64.base64encode(read(filename)))
     end
 end
 
@@ -498,43 +516,43 @@ function _ensure_documenter_key(
     access_token,
     owner_name,
     repo_name;
-    requester = HTTP.request,
+    requester = GitHubTransport(),
     key_generator = _generate_keys,
 )
-    keys, _ = _request_json(
-        "GET",
-        "$(GITHUB_API_URL)/repos/$(owner_name)/$(repo_name)/keys?per_page=100";
-        token = access_token,
-        requester = requester,
-    )
-    any(get(key, "title", "") == "Documenter" for key in keys) && return
+    # Only remove keys created by this workflow. Always rotate on an explicit
+    # resume: GitHub does not expose secret contents, so presence cannot prove
+    # that an existing public key and secret form a pair.
+    managed = Any[]
+    for page in 1:10
+        keys, _ = _request_json("GET",
+            "$GITHUB_API_URL/repos/$owner_name/$repo_name/keys?per_page=100&page=$page";
+            token=access_token, requester)
+        append!(managed, filter(key -> startswith(get(key, "title", ""), "PkgFactory Documenter "), keys))
+        length(keys) < 100 && break
+        page == 10 && throw(InputError("Too many deploy keys; inspect the repository manually."))
+    end
     public_key, private_key = key_generator()
-    _request_json(
-        "POST",
-        "$(GITHUB_API_URL)/repos/$(owner_name)/$(repo_name)/keys";
-        token = access_token,
-        body = Dict("title" => "Documenter", "key" => public_key, "read_only" => false),
-        expected = (201,),
-        requester = requester,
-    )
-    _set_repository_secret(
-        access_token,
-        owner_name,
-        repo_name,
-        "DOCUMENTER_KEY",
-        private_key;
-        requester = requester,
-    )
+    _request_json("POST", "$GITHUB_API_URL/repos/$owner_name/$repo_name/keys";
+        token=access_token,
+        body=Dict("title" => "PkgFactory Documenter $(UUIDs.uuid4())", "key" => public_key, "read_only" => false),
+        expected=(201,), requester)
+    _set_repository_secret(access_token, owner_name, repo_name, "DOCUMENTER_KEY", private_key; requester)
+    # Leave both keys in place if secret upload fails or its result is unknown.
+    # The next resume installs a fresh matching pair before cleaning old keys.
+    for key in managed
+        _request_json("DELETE", "$GITHUB_API_URL/repos/$owner_name/$repo_name/keys/$(key["id"])";
+            token=access_token, expected=(204, 404), requester)
+    end
 end
 
 """
 $(DocStringExtensions.TYPEDSIGNATURES)
 
 Create and bootstrap a Julia package repository entirely through the GitHub API.
-An interrupted setup can be continued with `resume = true`; an unrelated
-existing repository is never overwritten.
+Resume requires a matching `.pkgfactory.json` marker committed with the template.
+Unmarked repositories (including failures before that commit) require manual inspection.
 """
-function create_package(
+function _create_package(
     access_token::AbstractString,
     owner_name::String,
     repo_name::String,
@@ -545,10 +563,11 @@ function create_package(
     visibility::String = "public",
     commit_message::String = "Using PkgFactory.jl",
     resume::Bool = false,
-    requester = HTTP.request,
+    requester = GitHubTransport(),
     key_generator = _generate_keys,
+    stage = Ref("validation"),
 )
-    isempty(strip(access_token)) && error("A GitHub access token is required.")
+    _bounded_text(access_token, "access_token", 4096)
     repo_name = _verify_inputs(
         owner_name,
         repo_name,
@@ -556,7 +575,12 @@ function create_package(
         visibility,
         template_name,
     )
-    isempty(strip(commit_message)) && error("The commit message must not be empty.")
+    _bounded_text(package_description, "description", 2000; empty=true)
+    _bounded_text(commit_message, "commit_message", 500)
+    _bounded_text(codecov_token, "codecov_token", 4096; empty=true)
+    fingerprint = _fingerprint(owner_name, repo_name, author_names, package_description,
+        template_name, visibility, commit_message)
+    stage[] = "repository_lookup"
 
     viewer, _ = _request_json(
         "GET",
@@ -571,10 +595,9 @@ function create_package(
         requester = requester,
     )
     if repository_status == 200 && !resume
-        error(
-            "The repository, \"$(owner_name)/$(repo_name)\" already exists. Enable resume to continue an interrupted setup.",
-        )
+        throw(GitHubAPIError(409, "Repository already exists. Inspect its status before resuming."))
     elseif repository_status == 404
+        stage[] = "repository_creation"
         repository = _create_repository(
             access_token,
             owner_name,
@@ -586,6 +609,13 @@ function create_package(
         )
     end
 
+    stage[] = "recovery_validation"
+    marker = repository_status == 200 ? _marker(access_token, owner_name, repo_name; requester) : nothing
+    if repository_status == 200
+        isnothing(marker) && throw(InputError("No PkgFactory recovery marker. Inspect the repository manually; automatic resume is refused."))
+        get(marker.data, "fingerprint", "") == fingerprint ||
+            throw(InputError("Settings differ from the original PkgFactory operation."))
+    end
     default_branch = String(get(repository, "default_branch", "main"))
     project_file = _project_file(
         access_token,
@@ -593,6 +623,15 @@ function create_package(
         repo_name;
         requester = requester,
     )
+    if !isnothing(marker)
+        !isnothing(project_file) && get(marker.data, "project_sha256", "") == bytes2hex(SHA.sha256(project_file)) ||
+            throw(InputError("Project.toml changed since package generation; automatic resume is refused."))
+        get(marker.data, "state", "") in ("files_committed", "complete") || throw(InputError("Invalid recovery state."))
+        if marker.data["state"] == "complete"
+            return Dict("repository" => "$owner_name/$repo_name", "url" => "https://github.com/$owner_name/$repo_name", "resumed" => true)
+        end
+    end
+    stage[] = "template_commit"
     commit_sha = if isnothing(project_file)
         files = Templates.generate_template_files_dict(
             owner_name,
@@ -601,6 +640,8 @@ function create_package(
             package_description,
             template_name,
         )
+        files[MARKER_PATH] = JSON3.write(Dict("version" => 1, "fingerprint" => fingerprint,
+            "state" => "files_committed", "project_sha256" => bytes2hex(SHA.sha256(files["Project.toml"]))))
         _commit_template(
             access_token,
             owner_name,
@@ -624,6 +665,7 @@ function create_package(
         )
     end
 
+    stage[] = "default_branch"
     _ensure_main_branch(
         access_token,
         owner_name,
@@ -633,6 +675,7 @@ function create_package(
         requester = requester,
     )
     if template_name != "minimum"
+        stage[] = "documentation"
         _ensure_gh_pages(
             access_token,
             owner_name,
@@ -649,6 +692,7 @@ function create_package(
         )
     end
     if template_name != "minimum" && !isempty(strip(codecov_token))
+        stage[] = "coverage_secret"
         _set_repository_secret(
             access_token,
             owner_name,
@@ -659,11 +703,38 @@ function create_package(
         )
     end
 
+    stage[] = "completion_record"
+    marker = _marker(access_token, owner_name, repo_name; requester)
+    isnothing(marker) && throw(InputError("Recovery marker is missing."))
+    marker.data["state"] = "complete"
+    _request_json("PUT", "$GITHUB_API_URL/repos/$owner_name/$repo_name/contents/$MARKER_PATH";
+        token=access_token, body=Dict("message" => "Record completed PkgFactory setup",
+            "content" => Base64.base64encode(JSON3.write(marker.data)), "sha" => marker.sha), requester)
     return Dict(
         "repository" => "$(owner_name)/$(repo_name)",
         "url" => "https://github.com/$(owner_name)/$(repo_name)",
         "resumed" => repository_status == 200,
     )
+end
+
+"""Create a package with process-local exclusion for the target repository.
+Use one serving process; separate processes require an external operation lock.
+"""
+function create_package(token::AbstractString, owner::String, repo::String,
+    authors::Vector{String}, description::String, codecov_token::AbstractString=""; kwargs...)
+    _validate_owner(owner)
+    _bounded_text(repo, "package_name", 100)
+    stage = Ref("validation")
+    _with_repository_lock(owner, _normalize_repo_name(repo)) do
+        try
+            _create_package(token, owner, repo, authors, description, codecov_token; stage, kwargs...)
+        catch err
+            err isa InterruptException && rethrow()
+            err isa InputError && rethrow()
+            stage[] == "validation" && rethrow()
+            throw(CreationError(stage[], err isa GitHubAPIError ? err.status : 500))
+        end
+    end
 end
 
 end
